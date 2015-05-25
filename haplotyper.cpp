@@ -185,6 +185,24 @@ bool Partition::extends(Partition second)
 	return true;
 }
 
+//first index is new partition index, second index (inner vector) is old partition indices
+std::vector<std::vector<size_t>> findExtensions(std::vector<Partition> lastRow, std::vector<Partition> newRow)
+{
+	std::vector<std::vector<size_t>> ret;
+	ret.resize(newRow.size());
+	for (size_t i = 0; i < newRow.size(); i++)
+	{
+		for (size_t j = 0; j < lastRow.size(); j++)
+		{
+			if (newRow[i].extends(lastRow[j]))
+			{
+				ret[i].push_back(j);
+			}
+		}
+	}
+	return ret;
+}
+
 Partition Partition::filter(size_t newMinRow, size_t newMaxRow)
 {
 	newMinRow = std::max(newMinRow, minRow);
@@ -309,31 +327,29 @@ std::pair<Partition, double> haplotype(std::vector<SNPSupport> supports, size_t 
 			std::vector<Partition> newRowPartitions = Partition::getAllPartitions(activeRowsPerColumn[supports[thisSNPStart].SNPnum].first, activeRowsPerColumn[supports[thisSNPStart].SNPnum].second+1, k);
 			std::vector<double> newRowCosts;
 			std::vector<Partition> newOptimalPartitions;
-			for (auto x : newRowPartitions)
+			std::vector<std::vector<size_t>> extensions = findExtensions(oldRowPartitions, newRowPartitions);
+			for (size_t i = 0; i < extensions.size(); i++)
 			{
 				double cost = 0;
 				bool hasCost = false;
 				size_t optimalExtensionIndex = 0;
-				for (size_t a = 0; a < oldRowPartitions.size(); a++)
+				for (size_t a = 0; a < extensions[i].size(); a++)
 				{
-					if (x.extends(oldRowPartitions[a]))
-					{
 						if (!hasCost)
 						{
-							cost = oldRowCosts[a];
+							cost = oldRowCosts[extensions[i][a]];
 							hasCost = true;
-							optimalExtensionIndex = a;
+							optimalExtensionIndex = extensions[i][a];
 						}
-						if (oldRowCosts[a] < cost)
+						if (oldRowCosts[extensions[i][a]] < cost)
 						{
-							optimalExtensionIndex = a;
+							optimalExtensionIndex = extensions[i][a];
 						}
-						cost = std::min(cost, oldRowCosts[a]);
-					}
+						cost = std::min(cost, oldRowCosts[extensions[i][a]]);
 				}
 				assert(hasCost);
-				newRowCosts.push_back(cost+x.deltaCost(col));
-				newOptimalPartitions.push_back(oldOptimalPartitions[optimalExtensionIndex].merge(x));
+				newRowCosts.push_back(cost+newRowPartitions[i].deltaCost(col));
+				newOptimalPartitions.push_back(oldOptimalPartitions[optimalExtensionIndex].merge(newRowPartitions[i]));
 			}
 			oldRowPartitions = newRowPartitions;
 			oldRowCosts = newRowCosts;
