@@ -2,6 +2,7 @@
 #include <iostream>
 #include <cassert>
 #include <chrono>
+#include <valarray>
 
 #include "variant_utils.h"
 #include "haplotyper.h"
@@ -160,11 +161,28 @@ bool Partition::extends(Partition second)
 	{
 		return true;
 	}
-	Partition thisSubset = filter(intersectionStart, intersectionEnd);
-	Partition thatSubset = second.filter(intersectionStart, intersectionEnd);
-	thisSubset.unpermutate();
-	thatSubset.unpermutate();
-	return std::equal(thisSubset.assignments.begin(), thisSubset.assignments.end(), thatSubset.assignments.begin());
+	std::valarray<size_t> mapping(-1, k);
+	std::valarray<size_t> reverseMapping(-1, k);
+	for (size_t i = intersectionStart; i < intersectionEnd; i++)
+	{
+		if (mapping[assignments[i-minRow]] == -1)
+		{
+			mapping[assignments[i-minRow]] = second.assignments[i-second.minRow];
+		}
+		if (mapping[assignments[i-minRow]] != second.assignments[i-second.minRow])
+		{
+			return false;
+		}
+		if (reverseMapping[second.assignments[i-second.minRow]] == -1)
+		{
+			reverseMapping[second.assignments[i-second.minRow]] = assignments[i-minRow];
+		}
+		if (reverseMapping[second.assignments[i-second.minRow]] != assignments[i-minRow])
+		{
+			return false;
+		}
+	}
+	return true;
 }
 
 Partition Partition::filter(size_t newMinRow, size_t newMaxRow)
