@@ -185,19 +185,111 @@ bool Partition::extends(Partition second)
 	return true;
 }
 
+//basically <
+bool partitionCompare(Partition left, Partition right)
+{
+	for (size_t i = 0; i < left.assignments.size(); i++)
+	{
+		if (left.assignments[i] < right.assignments[i])
+		{
+			return true;
+		}
+		if (left.assignments[i] > right.assignments[i])
+		{
+			return false;
+		}
+	}
+	return false;
+}
+
 //first index is new partition index, second index (inner vector) is old partition indices
 std::vector<std::vector<size_t>> findExtensions(std::vector<Partition> lastRow, std::vector<Partition> newRow)
 {
 	std::vector<std::vector<size_t>> ret;
 	ret.resize(newRow.size());
-	for (size_t i = 0; i < newRow.size(); i++)
+	size_t intersectionStart = std::max(lastRow[0].minRow, newRow[0].minRow);
+	size_t intersectionEnd = std::min(lastRow[0].maxRow, newRow[0].maxRow);
+	if (intersectionEnd <= intersectionStart)
 	{
-		for (size_t j = 0; j < lastRow.size(); j++)
+		for (size_t i = 0; i < newRow.size(); i++)
 		{
-			if (newRow[i].extends(lastRow[j]))
+			for (size_t j = 0; j < lastRow.size(); j++)
 			{
 				ret[i].push_back(j);
 			}
+		}
+		return ret;
+	}
+	std::vector<std::pair<size_t, Partition>> newLastRow;
+	std::vector<std::pair<size_t, Partition>> newNewRow;
+	if (intersectionStart != lastRow[0].minRow || intersectionEnd != lastRow[0].maxRow)
+	{
+		for (size_t i = 0; i < lastRow.size(); i++)
+		{
+			Partition insertion = lastRow[i].filter(intersectionStart, intersectionEnd);
+			insertion.unpermutate();
+			newLastRow.emplace_back(i, insertion);
+		}
+	}
+	else
+	{
+		for (size_t i = 0; i < lastRow.size(); i++)
+		{
+			newLastRow.emplace_back(i, lastRow[i]);
+		}
+	}
+	if (intersectionStart != newRow[0].minRow || intersectionEnd != newRow[0].maxRow)
+	{
+		for (size_t i = 0; i < newRow.size(); i++)
+		{
+			Partition insertion = newRow[i].filter(intersectionStart, intersectionEnd);
+			insertion.unpermutate();
+			newNewRow.emplace_back(i, insertion);
+		}
+	}
+	else
+	{
+		for (size_t i = 0; i < newRow.size(); i++)
+		{
+			newNewRow.emplace_back(i, newRow[i]);
+		}
+	}
+	std::sort(newLastRow.begin(), newLastRow.end(), [](std::pair<size_t, Partition> left, std::pair<size_t, Partition> right) { return partitionCompare(left.second, right.second); });
+	std::sort(newNewRow.begin(), newNewRow.end(), [](std::pair<size_t, Partition> left, std::pair<size_t, Partition> right) { return partitionCompare(left.second, right.second); });
+
+	size_t lastIndex = 0;
+	size_t newIndex = 0;
+	while (lastIndex < newLastRow.size() && newIndex < newNewRow.size())
+	{
+		if (partitionCompare(newLastRow[lastIndex].second, newNewRow[newIndex].second))
+		{
+			lastIndex++;
+		}
+		else if (partitionCompare(newNewRow[newIndex].second, newLastRow[lastIndex].second))
+		{
+			newIndex++;
+		}
+		else
+		{
+			size_t newIndexEnd = newIndex+1;
+			size_t lastIndexEnd = lastIndex+1;
+			while (newIndexEnd < newNewRow.size() && !partitionCompare(newNewRow[newIndexEnd-1].second, newNewRow[newIndexEnd].second))
+			{
+				newIndexEnd++;
+			}
+			while (lastIndexEnd < newLastRow.size() && !partitionCompare(newLastRow[lastIndexEnd-1].second, newLastRow[lastIndexEnd].second))
+			{
+				lastIndexEnd++;
+			}
+			for (size_t i = newIndex; i < newIndexEnd; i++)
+			{
+				for (size_t j = lastIndex; j < lastIndexEnd; j++)
+				{
+					ret[newNewRow[i].first].push_back(newLastRow[j].first);
+				}
+			}
+			newIndex = newIndexEnd;
+			lastIndex = lastIndexEnd;
 		}
 	}
 	return ret;
