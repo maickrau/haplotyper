@@ -73,18 +73,55 @@ std::vector<Partition> Partition::getAllPartitions(size_t start, size_t end, siz
 Partition Partition::merge(Partition second)
 {
 	Partition ret { *this };
+/*	if (maxRow < second.minRow)
+	{
+		for (size_t i = maxRow; i < second.minRow; i++)
+		{
+			ret.assignments.push_back(0);
+		}
+		ret.maxRow = second.minRow;
+	}*/
 	assert(maxRow >= second.minRow);
-	assert(minRow <= second.maxRow);
-	if (second.minRow < minRow)
+	assert(minRow <= second.minRow);
+	
+	//preserve numbering of overlapping haplotypes
+	//eg {0, 1, 2}
+	//      {0, 1, 0}
+	//=>
+	//   {0, 1, 2, 1}
+	std::vector<size_t> numbering;
+	numbering.resize(k+1, -1);
+	std::set<size_t> unusedNumberings;
+	for (size_t i = 0; i < k; i++)
 	{
-		ret.assignments.insert(ret.assignments.begin(), second.assignments.begin(), second.assignments.begin()+(minRow-second.minRow));
-		ret.minRow = second.minRow;
+		unusedNumberings.insert(i);
 	}
-	if (second.maxRow > maxRow)
+	for (size_t i = std::max(minRow, second.minRow); i < std::min(maxRow, second.maxRow); i++)
 	{
-		ret.assignments.insert(ret.assignments.end(), second.assignments.begin()+(maxRow-second.minRow), second.assignments.end());
-		ret.maxRow = second.maxRow;
+		numbering[second.assignments[i-second.minRow]] = ret.assignments[i-ret.minRow];
+		auto found = unusedNumberings.find(second.assignments[i-second.minRow]);
+		if (found != unusedNumberings.end())
+		{
+			unusedNumberings.erase(found);
+		}
 	}
+	for (size_t i = 0; i < k; i++)
+	{
+		if (numbering[i] == -1)
+		{
+			auto found = unusedNumberings.lower_bound(0);
+			assert(found != unusedNumberings.end());
+			numbering[i] = *found;
+			unusedNumberings.erase(found);
+		}
+	}
+	
+	for (size_t i = ret.maxRow; i < second.maxRow; i++)
+	{
+		ret.assignments.push_back(numbering[second.assignments[i-second.minRow]]);
+	}
+	ret.maxRow = second.maxRow;
+
 	return ret;
 }
 
@@ -96,7 +133,7 @@ double Partition::wCost(Column col, char variant, size_t haplotype)
 	assert(col.maxRow <= maxRow);
 	for (size_t i = col.minRow; i < col.maxRow; i++)
 	{
-		if (col.variants[i] != variant && assignments[i-minRow] == haplotype)
+		if (col.variants[i] != 0 && col.variants[i] != variant && assignments[i-minRow] == haplotype)
 		{
 			sum += col.costs[i];
 		}
@@ -119,6 +156,10 @@ bool Partition::extends(Partition second)
 {
 	size_t intersectionStart = std::max(minRow, second.minRow);
 	size_t intersectionEnd = std::min(maxRow, second.maxRow);
+	if (intersectionEnd <= intersectionStart)
+	{
+		return true;
+	}
 	Partition thisSubset = filter(intersectionStart, intersectionEnd);
 	Partition thatSubset = second.filter(intersectionStart, intersectionEnd);
 	thisSubset.unpermutate();
@@ -163,15 +204,57 @@ Partition::Partition(Iterator start, Iterator end) :
 {
 }
 
+std::vector<std::pair<size_t, size_t>> getActiveRows(std::vector<SNPSupport> supports)
+{
+	std::vector<std::pair<size_t, size_t>> ret;
+	std::vector<bool> hasValue;
+	for (auto x : supports)
+	{
+		if (ret.size() <= x.SNPnum)
+		{
+			ret.resize(x.SNPnum+1);
+			hasValue.resize(x.SNPnum+1, false);
+		}
+		if (!hasValue[x.SNPnum])
+		{
+			ret[x.SNPnum].first = x.readNum;
+			ret[x.SNPnum].second = x.readNum;
+			hasValue[x.SNPnum] = true;
+		}
+		ret[x.SNPnum].first = std::min(ret[x.SNPnum].first, x.readNum);
+		ret[x.SNPnum].second = std::max(ret[x.SNPnum].second, x.readNum);
+	}
+	for (size_t i = 0; i < ret.size(); i++)
+	{
+		if (!hasValue[i])
+		{
+			ret[i].first = -1;
+			ret[i].second = 0;
+		}
+	}
+	for (size_t i = 1; i < ret.size(); i++)
+	{
+		ret[i].second = std::max(ret[i].second, ret[i-1].second);
+	}
+	for (size_t i = ret.size()-2; i > 0; i--)
+	{
+		ret[i].first = std::min(ret[i].first, ret[i+1].first);
+	}
+	return ret;
+}
+
 //returns optimal partition and its score
 std::pair<Partition, double> haplotype(std::vector<SNPSupport> supports, size_t k)
 {
+	std::cerr << "sort\n";
 	std::sort(supports.begin(), supports.end(), [](SNPSupport left, SNPSupport right) { return left.SNPnum < right.SNPnum; });
 
+	std::cerr << "active columns\n";
+	std::vector<std::pair<size_t, size_t>> activeRowsPerColumn = getActiveRows(supports);
+
+	std::cerr << "column " << supports[0].SNPnum << " (" << activeRowsPerColumn[supports[0].SNPnum].first << "-" << activeRowsPerColumn[supports[0].SNPnum].second << ")\n";
 	//handle first column separately
 	size_t firstSNPEnd = 0;
-	size_t minCurrentReadNum = supports[0].readNum;
-	size_t maxCurrentReadNum = supports[0].readNum;
 	for (size_t i = 1; i < supports.size(); i++)
 	{
 		if (supports[i].SNPnum != supports[i-1].SNPnum)
@@ -179,15 +262,10 @@ std::pair<Partition, double> haplotype(std::vector<SNPSupport> supports, size_t 
 			firstSNPEnd = i;
 			break;
 		}
-		else
-		{
-			minCurrentReadNum = std::min(minCurrentReadNum, supports[i].readNum);
-			maxCurrentReadNum = std::max(maxCurrentReadNum, supports[i].readNum);
-		}
 	}
 	//Column oldColumn { supports.begin(), supports.end(), supports[0].SNPnum };
-	Column oldColumn { supports.begin(), supports.begin()+firstSNPEnd, supports[0].SNPnum };
-	std::vector<Partition> oldRowPartitions = Partition::getAllPartitions(minCurrentReadNum, maxCurrentReadNum+1, k);
+	Column oldColumn { supports.begin(), supports.begin()+firstSNPEnd, supports[0].SNPnum, activeRowsPerColumn[supports[0].SNPnum].first, activeRowsPerColumn[supports[0].SNPnum].second+1 };
+	std::vector<Partition> oldRowPartitions = Partition::getAllPartitions(activeRowsPerColumn[supports[0].SNPnum].first, activeRowsPerColumn[supports[0].SNPnum].second+1, k);
 	std::vector<double> oldRowCosts;
 	std::vector<Partition> oldOptimalPartitions = oldRowPartitions;
 	for (auto x : oldRowPartitions)
@@ -195,9 +273,8 @@ std::pair<Partition, double> haplotype(std::vector<SNPSupport> supports, size_t 
 		oldRowCosts.push_back(x.deltaCost(oldColumn));
 	}
 
+	std::cerr << "start real columns\n";
 	//each column, including last one
-	minCurrentReadNum = supports[firstSNPEnd].readNum;
-	maxCurrentReadNum = supports[firstSNPEnd].readNum;
 	size_t thisSNPStart = firstSNPEnd;
 	auto lastColumnTime = std::chrono::system_clock::now();
 	for (size_t i = firstSNPEnd+1; i <= supports.size(); i++)
@@ -208,10 +285,10 @@ std::pair<Partition, double> haplotype(std::vector<SNPSupport> supports, size_t 
 			auto diff = std::chrono::duration_cast<std::chrono::duration<int,std::milli>>(newColumnTime-lastColumnTime);
 			lastColumnTime = newColumnTime;
 			std::cerr << " " << diff.count() << "ms\n";
-			std::cerr << "column " << supports[i-1].SNPnum;
+			std::cerr << "column " << supports[i-1].SNPnum << " (" << activeRowsPerColumn[supports[thisSNPStart].SNPnum].first << "-" << activeRowsPerColumn[supports[thisSNPStart].SNPnum].second << ")";
 			//Column col { supports.begin(), supports.end(), supports[thisSNPStart].SNPnum };
-			Column col { supports.begin()+thisSNPStart, supports.begin()+i, supports[thisSNPStart].SNPnum };
-			std::vector<Partition> newRowPartitions = Partition::getAllPartitions(minCurrentReadNum, maxCurrentReadNum+1, k);
+			Column col { supports.begin()+thisSNPStart, supports.begin()+i, supports[thisSNPStart].SNPnum, activeRowsPerColumn[supports[thisSNPStart].SNPnum].first, activeRowsPerColumn[supports[thisSNPStart].SNPnum].second+1 };
+			std::vector<Partition> newRowPartitions = Partition::getAllPartitions(activeRowsPerColumn[supports[thisSNPStart].SNPnum].first, activeRowsPerColumn[supports[thisSNPStart].SNPnum].second+1, k);
 			std::vector<double> newRowCosts;
 			std::vector<Partition> newOptimalPartitions;
 			for (auto x : newRowPartitions)
@@ -248,14 +325,9 @@ std::pair<Partition, double> haplotype(std::vector<SNPSupport> supports, size_t 
 				break;
 			}
 			thisSNPStart = i;
-			minCurrentReadNum = supports[i].readNum;
-			maxCurrentReadNum = supports[i].readNum;
 		}
-		minCurrentReadNum = std::min(minCurrentReadNum, supports[i].readNum);
-		maxCurrentReadNum = std::max(maxCurrentReadNum, supports[i].readNum);
 	}
 
-	//return only value instead of solution
 	size_t optimalResultIndex = 0;
 	for (size_t i = 1; i < oldRowCosts.size(); i++)
 	{
