@@ -3,62 +3,168 @@
 #include <cassert>
 #include <chrono>
 #include <valarray>
+#include <tuple>
 
 #include "variant_utils.h"
 #include "haplotyper.h"
 
+Partition::Partition() {}
+
+//preserve numbering of overlapping haplotypes
+//eg {0, 1, 2}
+//      {0, 1, 0}
+//=>
+//   {0, 1, 2, 1}
+std::vector<size_t> getNumbering(std::vector<size_t> left, std::vector<size_t> right, size_t k)
+{
+	assert(left.size() == right.size());
+	std::vector<size_t> numbering;
+	numbering.resize(k+1, -1);
+	std::set<size_t> unusedNumberings;
+	for (size_t i = 0; i < k; i++)
+	{
+		unusedNumberings.insert(i);
+	}
+	for (size_t i = 0; i < left.size(); i++)
+	{
+		numbering[right[i]] = left[i];
+		auto found = unusedNumberings.find(right[i]);
+		if (found != unusedNumberings.end())
+		{
+			unusedNumberings.erase(found);
+		}
+	}
+	for (size_t i = 0; i < k; i++)
+	{
+		if (numbering[i] == -1)
+		{
+			auto found = unusedNumberings.lower_bound(0);
+			assert(found != unusedNumberings.end());
+			numbering[i] = *found;
+			unusedNumberings.erase(found);
+		}
+	}
+	return numbering;
+}
+
 class PartitionContainer
 {
 public:
+	PartitionContainer(size_t k) : k(k) {};
 	size_t insertPartition(Partition partition);
 	size_t extendPartition(size_t partitionNum, Partition extension);
 	Partition getPartition(size_t partitionNum);
 	void clearUnused(std::vector<size_t> used);
 private:
+	size_t k;
+	//haplotype, row number, previous index (rownumber-1's index)
+	std::vector<std::tuple<size_t, size_t, size_t>> partitionsLinkedList;
 	std::vector<size_t> unusedIndices;
-	std::vector<Partition> partitions;
 };
 
 size_t PartitionContainer::insertPartition(Partition partition)
 {
-	partitions.push_back(partition);
-	return partitions.size()-1;
+	size_t lastIndex = partitionsLinkedList.size();
+	partitionsLinkedList.emplace_back(partition.assignments[0], partition.minRow, -1);
+	for (size_t i = 1; i < partition.assignments.size(); i++)
+	{
+		partitionsLinkedList.emplace_back(partition.assignments[i], partition.minRow+i, lastIndex+i-1);
+	}
+	return partitionsLinkedList.size()-1;
 }
 
 size_t PartitionContainer::extendPartition(size_t partitionNum, Partition extension)
 {
-	Partition left = getPartition(partitionNum);
-	Partition extend = left.merge(extension);
-	if (unusedIndices.size() > 0)
+	assert(std::get<1>(partitionsLinkedList[partitionNum]) >= extension.minRow);
+	assert(std::get<1>(partitionsLinkedList[partitionNum]) <= extension.maxRow);
+
+	//find numbering
+	std::vector<size_t> left;
+	size_t pos = partitionNum;
+	while (std::get<1>(partitionsLinkedList[pos]) >= extension.minRow)
 	{
-		partitions[unusedIndices.back()] = extend;
-		size_t ret = unusedIndices.back();
-		unusedIndices.pop_back();
-		return ret;
+		left.push_back(std::get<0>(partitionsLinkedList[pos]));
+		if (std::get<2>(partitionsLinkedList[pos]) == -1)
+		{
+			break;
+		}
+		size_t oldRowNum = std::get<1>(partitionsLinkedList[pos]);
+		pos = std::get<2>(partitionsLinkedList[pos]);
+		size_t newRowNum = std::get<1>(partitionsLinkedList[pos]);
+		assert(newRowNum == oldRowNum-1);
+		assert(oldRowNum > 0);
 	}
-	partitions.push_back(extend);
-	return partitions.size()-1;
+	std::reverse(left.begin(), left.end());
+	assert(std::get<1>(partitionsLinkedList[partitionNum])+1 >= left.size());
+	assert(std::get<1>(partitionsLinkedList[partitionNum]) >= extension.minRow);
+	assert(std::get<1>(partitionsLinkedList[partitionNum])-left.size()+1 >= extension.minRow);
+	std::vector<size_t> right { extension.assignments.begin()+(std::get<1>(partitionsLinkedList[partitionNum])+1-left.size()-extension.minRow), extension.assignments.begin()+(std::get<1>(partitionsLinkedList[partitionNum])-extension.minRow+1) };
+	assert(left.size() == right.size());
+	std::vector<size_t> numbering = getNumbering(left, right, k);
+
+	//insert part after overlap
+	pos = partitionNum;
+	size_t extensionIndex = std::get<1>(partitionsLinkedList[partitionNum])-extension.minRow+1;
+	while (extensionIndex < extension.assignments.size())
+	{
+		if (unusedIndices.size() > 0)
+		{
+			size_t insertPos = unusedIndices.back();
+			unusedIndices.pop_back();
+			std::get<0>(partitionsLinkedList[insertPos]) = numbering[extension.assignments[extensionIndex]];
+			std::get<1>(partitionsLinkedList[insertPos]) = extension.minRow+extensionIndex;
+			std::get<2>(partitionsLinkedList[insertPos]) = pos;
+			pos = insertPos;
+		}
+		else
+		{
+			partitionsLinkedList.emplace_back(numbering[extension.assignments[extensionIndex]], extension.minRow+extensionIndex, pos);
+			pos = partitionsLinkedList.size()-1;
+		}
+		extensionIndex++;
+	}
+	return pos;
 }
 
 Partition PartitionContainer::getPartition(size_t partitionNum)
 {
-	return partitions[partitionNum];
+	Partition ret;
+	ret.maxRow = std::get<1>(partitionsLinkedList[partitionNum]);
+	ret.minRow = ret.maxRow;
+	while (std::get<2>(partitionsLinkedList[partitionNum]) != -1)
+	{
+		ret.assignments.push_back(std::get<0>(partitionsLinkedList[partitionNum]));
+		size_t oldMinRow = ret.minRow;
+		partitionNum = std::get<2>(partitionsLinkedList[partitionNum]);
+		ret.minRow = std::get<1>(partitionsLinkedList[partitionNum]);
+		size_t newMinRow = ret.minRow;
+		assert(newMinRow == oldMinRow-1);
+	}
+	ret.assignments.push_back(std::get<0>(partitionsLinkedList[partitionNum]));
+	ret.minRow = std::get<1>(partitionsLinkedList[partitionNum]);
+	std::reverse(ret.assignments.begin(), ret.assignments.end());
+	ret.k = k;
+	return ret;
 }
 
 void PartitionContainer::clearUnused(std::vector<size_t> used)
 {
 	std::vector<bool> isUsed;
-	isUsed.resize(partitions.size(), false);
+	isUsed.resize(partitionsLinkedList.size(), false);
 	for (auto x : used)
 	{
+		while (std::get<2>(partitionsLinkedList[x]) != -1)
+		{
+			isUsed[x] = true;
+			x = std::get<2>(partitionsLinkedList[x]);
+		}
 		isUsed[x] = true;
 	}
-	//mark unused as used so they don't get inserted twice into unusedIndices
 	for (auto x : unusedIndices)
 	{
 		isUsed[x] = true;
 	}
-	for (size_t i = 0; i < partitions.size(); i++)
+	for (size_t i = 0; i < partitionsLinkedList.size(); i++)
 	{
 		if (!isUsed[i])
 		{
@@ -144,38 +250,12 @@ Partition Partition::merge(Partition second)
 	}*/
 	assert(maxRow >= second.minRow);
 	assert(minRow <= second.minRow);
-	
-	//preserve numbering of overlapping haplotypes
-	//eg {0, 1, 2}
-	//      {0, 1, 0}
-	//=>
-	//   {0, 1, 2, 1}
-	std::vector<size_t> numbering;
-	numbering.resize(k+1, -1);
-	std::set<size_t> unusedNumberings;
-	for (size_t i = 0; i < k; i++)
-	{
-		unusedNumberings.insert(i);
-	}
-	for (size_t i = std::max(minRow, second.minRow); i < std::min(maxRow, second.maxRow); i++)
-	{
-		numbering[second.assignments[i-second.minRow]] = ret.assignments[i-ret.minRow];
-		auto found = unusedNumberings.find(second.assignments[i-second.minRow]);
-		if (found != unusedNumberings.end())
-		{
-			unusedNumberings.erase(found);
-		}
-	}
-	for (size_t i = 0; i < k; i++)
-	{
-		if (numbering[i] == -1)
-		{
-			auto found = unusedNumberings.lower_bound(0);
-			assert(found != unusedNumberings.end());
-			numbering[i] = *found;
-			unusedNumberings.erase(found);
-		}
-	}
+
+	size_t intersectionStart = std::max(minRow, second.minRow);
+	size_t intersectionEnd = std::min(maxRow, second.maxRow);
+	std::vector<size_t> leftPart { assignments.begin()+(intersectionStart-minRow), assignments.begin()+(intersectionEnd-minRow) };
+	std::vector<size_t> rightPart { second.assignments.begin()+(intersectionStart-second.minRow), second.assignments.begin()+(intersectionEnd-second.minRow) };
+	std::vector<size_t> numbering = getNumbering(leftPart, rightPart, k);
 	
 	for (size_t i = ret.maxRow; i < second.maxRow; i++)
 	{
@@ -451,7 +531,7 @@ std::pair<Partition, double> haplotype(std::vector<SNPSupport> supports, size_t 
 			break;
 		}
 	}
-	PartitionContainer optimalPartitions;
+	PartitionContainer optimalPartitions { k };
 	//Column oldColumn { supports.begin(), supports.end(), supports[0].SNPnum };
 	Column oldColumn { supports.begin(), supports.begin()+firstSNPEnd, supports[0].SNPnum, activeRowsPerColumn[supports[0].SNPnum].first, activeRowsPerColumn[supports[0].SNPnum].second+1 };
 	std::vector<Partition> oldRowPartitions = Partition::getAllPartitions(activeRowsPerColumn[supports[0].SNPnum].first, activeRowsPerColumn[supports[0].SNPnum].second+1, k);

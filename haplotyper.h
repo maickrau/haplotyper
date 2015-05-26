@@ -35,6 +35,7 @@ public:
 class Partition
 {
 public:
+	Partition();
 	static std::vector<Partition> getAllPartitions(size_t start, size_t end, size_t k);
 	template <typename Iterator>
 	Partition(Iterator start, Iterator end);
