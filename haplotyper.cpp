@@ -7,6 +7,66 @@
 #include "variant_utils.h"
 #include "haplotyper.h"
 
+class PartitionContainer
+{
+public:
+	size_t insertPartition(Partition partition);
+	size_t extendPartition(size_t partitionNum, Partition extension);
+	Partition getPartition(size_t partitionNum);
+	void clearUnused(std::vector<size_t> used);
+private:
+	std::vector<size_t> unusedIndices;
+	std::vector<Partition> partitions;
+};
+
+size_t PartitionContainer::insertPartition(Partition partition)
+{
+	partitions.push_back(partition);
+	return partitions.size()-1;
+}
+
+size_t PartitionContainer::extendPartition(size_t partitionNum, Partition extension)
+{
+	Partition left = getPartition(partitionNum);
+	Partition extend = left.merge(extension);
+	if (unusedIndices.size() > 0)
+	{
+		partitions[unusedIndices.back()] = extend;
+		size_t ret = unusedIndices.back();
+		unusedIndices.pop_back();
+		return ret;
+	}
+	partitions.push_back(extend);
+	return partitions.size()-1;
+}
+
+Partition PartitionContainer::getPartition(size_t partitionNum)
+{
+	return partitions[partitionNum];
+}
+
+void PartitionContainer::clearUnused(std::vector<size_t> used)
+{
+	std::vector<bool> isUsed;
+	isUsed.resize(partitions.size(), false);
+	for (auto x : used)
+	{
+		isUsed[x] = true;
+	}
+	//mark unused as used so they don't get inserted twice into unusedIndices
+	for (auto x : unusedIndices)
+	{
+		isUsed[x] = true;
+	}
+	for (size_t i = 0; i < partitions.size(); i++)
+	{
+		if (!isUsed[i])
+		{
+			unusedIndices.push_back(i);
+		}
+	}
+}
+
 //must not return permutations, otherwise will produce about k! times more partitions than necessary
 //[start, end)
 std::vector<Partition> Partition::getAllPartitions(size_t start, size_t end, size_t k)
@@ -391,11 +451,16 @@ std::pair<Partition, double> haplotype(std::vector<SNPSupport> supports, size_t 
 			break;
 		}
 	}
+	PartitionContainer optimalPartitions;
 	//Column oldColumn { supports.begin(), supports.end(), supports[0].SNPnum };
 	Column oldColumn { supports.begin(), supports.begin()+firstSNPEnd, supports[0].SNPnum, activeRowsPerColumn[supports[0].SNPnum].first, activeRowsPerColumn[supports[0].SNPnum].second+1 };
 	std::vector<Partition> oldRowPartitions = Partition::getAllPartitions(activeRowsPerColumn[supports[0].SNPnum].first, activeRowsPerColumn[supports[0].SNPnum].second+1, k);
 	std::vector<double> oldRowCosts;
-	std::vector<Partition> oldOptimalPartitions = oldRowPartitions;
+	std::vector<size_t> oldOptimalPartitions;
+	for (size_t i = 0; i < oldRowPartitions.size(); i++)
+	{
+		oldOptimalPartitions.push_back(optimalPartitions.insertPartition(oldRowPartitions[i]));
+	}
 	for (auto x : oldRowPartitions)
 	{
 		oldRowCosts.push_back(x.deltaCost(oldColumn));
@@ -418,7 +483,7 @@ std::pair<Partition, double> haplotype(std::vector<SNPSupport> supports, size_t 
 			Column col { supports.begin()+thisSNPStart, supports.begin()+i, supports[thisSNPStart].SNPnum, activeRowsPerColumn[supports[thisSNPStart].SNPnum].first, activeRowsPerColumn[supports[thisSNPStart].SNPnum].second+1 };
 			std::vector<Partition> newRowPartitions = Partition::getAllPartitions(activeRowsPerColumn[supports[thisSNPStart].SNPnum].first, activeRowsPerColumn[supports[thisSNPStart].SNPnum].second+1, k);
 			std::vector<double> newRowCosts;
-			std::vector<Partition> newOptimalPartitions;
+			std::vector<size_t> newOptimalPartitions;
 			std::vector<std::vector<size_t>> extensions = findExtensions(oldRowPartitions, newRowPartitions);
 			for (size_t i = 0; i < extensions.size(); i++)
 			{
@@ -441,7 +506,7 @@ std::pair<Partition, double> haplotype(std::vector<SNPSupport> supports, size_t 
 				}
 				assert(hasCost);
 				newRowCosts.push_back(cost+newRowPartitions[i].deltaCost(col));
-				newOptimalPartitions.push_back(oldOptimalPartitions[optimalExtensionIndex].merge(newRowPartitions[i]));
+				newOptimalPartitions.push_back(optimalPartitions.extendPartition(oldOptimalPartitions[optimalExtensionIndex], newRowPartitions[i]));
 			}
 			oldRowPartitions = newRowPartitions;
 			oldRowCosts = newRowCosts;
@@ -462,5 +527,5 @@ std::pair<Partition, double> haplotype(std::vector<SNPSupport> supports, size_t 
 			optimalResultIndex = i;
 		}
 	}
-	return std::pair<Partition, double>{oldOptimalPartitions[optimalResultIndex], oldRowCosts[optimalResultIndex]};
+	return std::pair<Partition, double>{optimalPartitions.getPartition(oldOptimalPartitions[optimalResultIndex]), oldRowCosts[optimalResultIndex]};
 }
