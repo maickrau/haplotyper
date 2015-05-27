@@ -266,7 +266,7 @@ Partition Partition::merge(Partition second)
 	return ret;
 }
 
-double Partition::wCost(Column col, char variant, size_t haplotype)
+double Partition::wCost(const Column& col, char variant, size_t haplotype)
 {
 	double sum = 0;
 	assert(col.minRow == minRow);
@@ -282,7 +282,7 @@ double Partition::wCost(Column col, char variant, size_t haplotype)
 	return sum;
 }
 
-double Partition::deltaCost(Column col)
+double Partition::deltaCost(const Column& col)
 {
 	double sum = 0;
 	for (size_t i = 0; i < k; i++)
@@ -326,7 +326,7 @@ bool Partition::extends(Partition second)
 }
 
 //basically <
-bool partitionCompare(Partition left, Partition right)
+bool partitionCompare(const Partition& left, const Partition& right)
 {
 	for (size_t i = 0; i < left.assignments.size(); i++)
 	{
@@ -394,8 +394,8 @@ std::vector<std::vector<size_t>> findExtensions(std::vector<Partition> lastRow, 
 			newNewRow.emplace_back(i, newRow[i]);
 		}
 	}
-	std::sort(newLastRow.begin(), newLastRow.end(), [](std::pair<size_t, Partition> left, std::pair<size_t, Partition> right) { return partitionCompare(left.second, right.second); });
-	std::sort(newNewRow.begin(), newNewRow.end(), [](std::pair<size_t, Partition> left, std::pair<size_t, Partition> right) { return partitionCompare(left.second, right.second); });
+	std::sort(newLastRow.begin(), newLastRow.end(), [](const std::pair<size_t, Partition>& left, const std::pair<size_t, Partition>& right) { return partitionCompare(left.second, right.second); });
+	std::sort(newNewRow.begin(), newNewRow.end(), [](const std::pair<size_t, Partition>& left, const std::pair<size_t, Partition>& right) { return partitionCompare(left.second, right.second); });
 
 	size_t lastIndex = 0;
 	size_t newIndex = 0;

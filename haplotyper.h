@@ -42,14 +42,14 @@ public:
 	Partition filter(size_t newMinRow, size_t newMaxRow);
 	bool extends(Partition second);
 	void unpermutate();
-	double deltaCost(Column col);
+	double deltaCost(const Column& col);
 	Partition merge(Partition second);
 	std::vector<size_t> assignments;
 	size_t minRow;
 	size_t maxRow;
 	size_t k;
 private:
-	double wCost(Column col, char variant, size_t haplotype);
+	double wCost(const Column& col, char variant, size_t haplotype);
 };
 
 std::pair<Partition, double> haplotype(std::vector<SNPSupport> supports, size_t k);
