@@ -186,6 +186,7 @@ void PartitionAssignments::extendCapacity(size_t newCapacity, size_t defaultValu
 {
 	assert(log2k > 0);
 	assert(k > 0);
+	assert(defaultValue == 0);
 	size_t newDataSize = (newCapacity*log2k/8+7)+1;
 	data.resize(newDataSize, defaultValue);
 }
@@ -201,7 +202,7 @@ void PartitionAssignments::resize(size_t newSize, size_t defaultValue)
 {
 	assert(log2k > 0);
 	assert(k > 0);
-	assert(defaultValue == 0 || defaultValue == -1);
+	assert(defaultValue == 0);
 	size_t newDataSize = (newSize*log2k/8+7)+1;
 	data.resize(newDataSize, defaultValue);
 	actualSize = newSize;
@@ -557,7 +558,18 @@ bool Partition::extends(Partition second)
 //basically <
 bool partitionCompare(const Partition& left, const Partition& right)
 {
-	for (size_t i = 0; i < left.assignments.size(); i++)
+	for (size_t i = 0; i < left.assignments.actualSize*left.assignments.log2k/8; i++)
+	{
+		if (left.assignments.data[i] < right.assignments.data[i])
+		{
+			return true;
+		}
+		if (left.assignments.data[i] > right.assignments.data[i])
+		{
+			return false;
+		}
+	}
+	for (size_t i = (left.assignments.actualSize*left.assignments.log2k/8)*8/left.assignments.log2k; i < left.assignments.actualSize; i++)
 	{
 		if (left.assignments[i] < right.assignments[i])
 		{

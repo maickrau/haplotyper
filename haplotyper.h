@@ -32,6 +32,8 @@ public:
 	size_t maxRow;
 };
 
+class Partition;
+
 class PartitionAssignments
 {
 public:
@@ -98,6 +100,7 @@ private:
 	size_t actualSize;
 	std::vector<unsigned char> data;
 	friend class PartitionAssignments::PartitionAssignmentElement;
+	friend bool partitionCompare(const Partition& left, const Partition& right);
 };
 
 class Partition
