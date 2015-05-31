@@ -4,11 +4,232 @@
 #include <chrono>
 #include <valarray>
 #include <tuple>
+#include <cmath>
 
 #include "variant_utils.h"
 #include "haplotyper.h"
 
 Partition::Partition() {}
+
+PartitionAssignments::PartitionAssignmentElement::PartitionAssignmentElement(PartitionAssignments& container, size_t pos)	:
+	container(container),
+	pos(pos)
+{
+}
+
+namespace std
+{
+	template <>
+	void iter_swap(PartitionAssignments::iterator left, PartitionAssignments::iterator right)
+	{
+		size_t value = *left;
+		*left = (size_t)*right;
+		*right = value;
+	}
+
+}
+
+void swap(PartitionAssignments::PartitionAssignmentElement& left, PartitionAssignments::PartitionAssignmentElement& right)
+{
+	size_t value = (size_t)left;
+	left = (size_t)right;
+	right = value;
+}
+
+PartitionAssignments::PartitionAssignmentElement::operator size_t() const
+{
+	size_t bytePos = pos*container.log2k/8;
+	size_t bitPos = (pos*container.log2k)%8;
+	size_t ret = 0;
+	for (size_t i = 0; i < container.log2k; i++)
+	{
+		ret <<= 1;
+		ret |= (container.data[bytePos]&(1<<bitPos))>>bitPos;
+		bitPos++;
+		if (bitPos == 8)
+		{
+			bitPos = 0;
+			bytePos++;
+		}
+	}
+	return ret;
+}
+
+PartitionAssignments::PartitionAssignmentElementConst::operator size_t() const
+{
+	return (size_t)el;
+}
+
+PartitionAssignments::PartitionAssignmentElementConst::PartitionAssignmentElementConst(const PartitionAssignments& container, size_t pos)	:
+	el(const_cast<PartitionAssignments&>(container), pos)
+{
+}
+
+PartitionAssignments::PartitionAssignmentElement& PartitionAssignments::PartitionAssignmentElement::operator=(size_t value)
+{
+	assert(container.k > 0);
+	assert(container.log2k > 0);
+	size_t bytePos = ((pos+1)*container.log2k-1)/8;
+	size_t bitPos = ((pos+1)*container.log2k-1)%8;
+	size_t ret = 0;
+	for (size_t i = 0; i < container.log2k; i++)
+	{
+		if (value & 1)
+		{
+			container.data[bytePos] |= 1<<bitPos;
+		}
+		else
+		{
+			container.data[bytePos] &= (-1) ^ (1<<bitPos);
+		}
+		value >>= 1;
+		bitPos--;
+		if (bitPos > 8)
+		{
+			bitPos = 7;
+			bytePos--;
+		}
+	}
+	return *this;
+}
+
+PartitionAssignments::iterator::iterator(PartitionAssignments& container, size_t pos) :
+	container(container),
+	pos(pos)
+{
+}
+
+PartitionAssignments::iterator PartitionAssignments::iterator::operator++()
+{
+	pos++;
+	return *this;
+}
+
+PartitionAssignments::iterator PartitionAssignments::iterator::operator++(int)
+{
+	PartitionAssignments::iterator ret = *this;
+	pos++;
+	return ret;
+}
+
+PartitionAssignments::iterator PartitionAssignments::iterator::operator--()
+{
+	pos--;
+	return *this;
+}
+
+PartitionAssignments::iterator PartitionAssignments::iterator::operator--(int)
+{
+	PartitionAssignments::iterator ret = *this;
+	pos--;
+	return ret;
+}
+
+PartitionAssignments::PartitionAssignmentElement PartitionAssignments::iterator::operator*()
+{
+	return container[pos];
+}
+
+bool PartitionAssignments::iterator::operator==(const PartitionAssignments::iterator& second)
+{
+	return &container == &second.container && pos == second.pos;
+}
+
+bool PartitionAssignments::iterator::operator!=(const PartitionAssignments::iterator& second)
+{
+	return !(*this == second);
+}
+
+PartitionAssignments::iterator PartitionAssignments::iterator::operator+(size_t add)
+{
+	pos += add;
+	return *this;
+}
+
+PartitionAssignments::iterator PartitionAssignments::iterator::operator-(size_t deduct)
+{
+	pos -= deduct;
+	return *this;
+}
+
+PartitionAssignments::PartitionAssignments() : k(0), log2k(0), actualSize(0), data()
+{
+}
+
+PartitionAssignments::iterator PartitionAssignments::begin()
+{
+	assert(log2k > 0);
+	assert(k > 0);
+	return PartitionAssignments::iterator(*this, 0);
+}
+
+PartitionAssignments::iterator PartitionAssignments::end()
+{
+	assert(log2k > 0);
+	assert(k > 0);
+	return PartitionAssignments::iterator(*this, actualSize);
+}
+
+void PartitionAssignments::push_back(size_t value)
+{
+	assert(log2k > 0);
+	assert(k > 0);
+	if (capacity() <= size())
+	{
+		extendCapacity(size()*2, 0);
+	}
+	(*this)[size()] = value;
+	actualSize++;
+}
+
+void PartitionAssignments::extendCapacity(size_t newCapacity, size_t defaultValue)
+{
+	assert(log2k > 0);
+	assert(k > 0);
+	size_t newDataSize = (newCapacity*log2k/8+7)+1;
+	data.resize(newDataSize, defaultValue);
+}
+
+void PartitionAssignments::setk(size_t newk)
+{
+	k = newk;
+	log2k = ceil(log2(k));
+	assert(data.size() == 0);
+}
+
+void PartitionAssignments::resize(size_t newSize, size_t defaultValue)
+{
+	assert(log2k > 0);
+	assert(k > 0);
+	assert(defaultValue == 0 || defaultValue == -1);
+	size_t newDataSize = (newSize*log2k/8+7)+1;
+	data.resize(newDataSize, defaultValue);
+	actualSize = newSize;
+}
+
+size_t PartitionAssignments::size() const
+{
+	assert(log2k > 0);
+	assert(k > 0);
+	return actualSize;
+}
+
+size_t PartitionAssignments::capacity() const
+{
+	return data.size()*8/log2k;
+}
+
+PartitionAssignments::PartitionAssignmentElement PartitionAssignments::operator[](size_t pos)
+{
+	return PartitionAssignmentElement(*this, pos);
+}
+
+PartitionAssignments::PartitionAssignmentElementConst PartitionAssignments::operator[](size_t pos) const
+{
+	return PartitionAssignmentElementConst(*this, pos);
+}
+
+
 
 //preserve numbering of overlapping haplotypes
 //eg {0, 1, 2}
@@ -131,6 +352,7 @@ Partition PartitionContainer::getPartition(size_t partitionNum)
 	Partition ret;
 	ret.maxRow = std::get<1>(partitionsLinkedList[partitionNum]);
 	ret.minRow = ret.maxRow;
+	ret.setk(k);
 	while (std::get<2>(partitionsLinkedList[partitionNum]) != -1)
 	{
 		ret.assignments.push_back(std::get<0>(partitionsLinkedList[partitionNum]));
@@ -143,7 +365,6 @@ Partition PartitionContainer::getPartition(size_t partitionNum)
 	ret.assignments.push_back(std::get<0>(partitionsLinkedList[partitionNum]));
 	ret.minRow = std::get<1>(partitionsLinkedList[partitionNum]);
 	std::reverse(ret.assignments.begin(), ret.assignments.end());
-	ret.k = k;
 	return ret;
 }
 
@@ -173,6 +394,16 @@ void PartitionContainer::clearUnused(std::vector<size_t> used)
 	}
 }
 
+size_t Partition::getk()
+{
+	return k;
+}
+
+void Partition::setk(size_t newK)
+{
+	k = newK;
+	assignments.setk(k);
+}
 //must not return permutations, otherwise will produce about k! times more partitions than necessary
 //[start, end)
 std::vector<Partition> Partition::getAllPartitions(size_t start, size_t end, size_t k)
@@ -185,20 +416,18 @@ std::vector<Partition> Partition::getAllPartitions(size_t start, size_t end, siz
 	rowsOccupied[0] = end-start;
 	if (end == start+1)
 	{
-		ret.emplace_back(newPartition.begin(), newPartition.end());
+		ret.emplace_back(newPartition.begin(), newPartition.end(), k);
 		ret.back().minRow = start;
 		ret.back().maxRow = end;
-		ret.back().k = k;
 		return ret;
 	}
 	size_t loc = end-start-1;
 	bool repeat = true;
 	while (repeat)
 	{
-		ret.emplace_back(newPartition.begin(), newPartition.end());
+		ret.emplace_back(newPartition.begin(), newPartition.end(), k);
 		ret.back().minRow = start;
 		ret.back().maxRow = end;
-		ret.back().k = k;
 		assert(rowsOccupied[newPartition[loc]] > 0);
 		assert(rowsOccupied[newPartition[loc]] <= end-start);
 		rowsOccupied[newPartition[loc]]--;
@@ -439,10 +668,9 @@ Partition Partition::filter(size_t newMinRow, size_t newMaxRow)
 {
 	newMinRow = std::max(newMinRow, minRow);
 	newMaxRow = std::min(newMaxRow, maxRow);
-	Partition ret {assignments.begin()+(newMinRow-minRow), assignments.end()-(maxRow-newMaxRow)};
+	Partition ret {assignments.begin()+(newMinRow-minRow), assignments.end()-(maxRow-newMaxRow), k};
 	ret.minRow = newMinRow;
 	ret.maxRow = newMaxRow;
-	ret.k = k;
 	return ret;
 }
 
@@ -451,25 +679,33 @@ void Partition::unpermutate()
 	std::vector<size_t> mapping;
 	mapping.resize(k, -1);
 	size_t nextNum = 0;
-	for (auto& x : assignments)
+	for (size_t i = 0; i < assignments.size(); i++)
 	{
-		assert(x < k);
-		if (mapping[x] == -1)
+		assert(assignments[i] < k);
+		if (mapping[assignments[i]] == -1)
 		{
-			mapping[x] = nextNum;
+			mapping[assignments[i]] = nextNum;
 			nextNum++;
 		}
-		x = mapping[x];
+		assignments[i] = mapping[assignments[i]];
 	}
 }
 
 template <typename Iterator>
-Partition::Partition(Iterator start, Iterator end) :
-	assignments(start, end),
+Partition::Partition(Iterator start, Iterator end, size_t k) :
+	assignments(),
 	minRow(),
 	maxRow(),
-	k()
+	k(k)
 {
+	assignments.setk(k);
+	size_t pos = 0;
+	while (start != end)
+	{
+		assignments.push_back((size_t)*start);
+		pos++;
+		start++;
+	}
 }
 
 std::vector<std::pair<size_t, size_t>> getActiveRows(std::vector<SNPSupport> supports)

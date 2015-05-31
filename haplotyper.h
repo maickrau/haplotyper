@@ -32,23 +32,93 @@ public:
 	size_t maxRow;
 };
 
+class PartitionAssignments
+{
+public:
+	class PartitionAssignmentElement
+	{
+	public:
+		operator size_t() const;
+		PartitionAssignmentElement& operator=(size_t value);
+		PartitionAssignmentElement& operator=(const PartitionAssignmentElement) = delete;
+	private:
+		PartitionAssignmentElement(PartitionAssignments& container, size_t pos);
+		PartitionAssignments& container;
+		size_t pos;
+		friend class PartitionAssignments;
+	};
+	class PartitionAssignmentElementConst
+	{
+	public:
+		operator size_t() const;
+	private:
+		PartitionAssignmentElementConst(const PartitionAssignments& container, size_t pos);
+		PartitionAssignmentElement el;
+		friend class PartitionAssignments;
+	};
+	class iterator
+	{
+	public:
+		typedef size_t difference_type;
+		typedef PartitionAssignmentElement value_type;
+		typedef PartitionAssignmentElement& reference;
+		typedef PartitionAssignmentElement* pointer;
+		typedef std::bidirectional_iterator_tag iterator_category;
+		PartitionAssignmentElement operator*();
+		iterator(const iterator& second) = default;
+		iterator& operator=(const iterator& second) = default;
+		iterator operator++();
+		iterator operator++(int);
+		iterator operator--();
+		iterator operator--(int);
+		iterator operator+(size_t add);
+		iterator operator-(size_t deduct);
+		bool operator==(const iterator& second);
+		bool operator!=(const iterator& second);
+	private:
+		iterator(PartitionAssignments& container, size_t pos);
+		PartitionAssignments& container;
+		size_t pos;
+		friend class PartitionAssignments;
+	};
+	PartitionAssignments();
+	PartitionAssignmentElement operator[](size_t pos);
+	PartitionAssignmentElementConst operator[](size_t pos) const;
+	void push_back(size_t value);
+	void resize(size_t newSize, size_t defaultValue);
+	size_t size() const;
+	size_t capacity() const;
+	void setk(size_t k);
+	iterator begin();
+	iterator end();
+private:
+	void extendCapacity(size_t newCapacity, size_t defaultValue);
+	size_t k;
+	size_t log2k;
+	size_t actualSize;
+	std::vector<unsigned char> data;
+	friend class PartitionAssignments::PartitionAssignmentElement;
+};
+
 class Partition
 {
 public:
 	Partition();
 	static std::vector<Partition> getAllPartitions(size_t start, size_t end, size_t k);
 	template <typename Iterator>
-	Partition(Iterator start, Iterator end);
+	Partition(Iterator start, Iterator end, size_t k);
 	Partition filter(size_t newMinRow, size_t newMaxRow);
 	bool extends(Partition second);
 	void unpermutate();
 	double deltaCost(const Column& col);
 	Partition merge(Partition second);
-	std::vector<size_t> assignments;
+	PartitionAssignments assignments;
+	size_t getk();
+	void setk(size_t value);
 	size_t minRow;
 	size_t maxRow;
-	size_t k;
 private:
+	size_t k;
 	double wCost(const Column& col, char variant, size_t haplotype);
 };
 
