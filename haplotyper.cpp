@@ -241,7 +241,7 @@ std::vector<size_t> getNumbering(std::vector<size_t> left, std::vector<size_t> r
 {
 	assert(left.size() == right.size());
 	std::vector<size_t> numbering;
-	numbering.resize(k+1, -1);
+	numbering.resize(k, -1);
 	std::set<size_t> unusedNumberings;
 	for (size_t i = 0; i < k; i++)
 	{
@@ -249,24 +249,42 @@ std::vector<size_t> getNumbering(std::vector<size_t> left, std::vector<size_t> r
 	}
 	for (size_t i = 0; i < left.size(); i++)
 	{
-		numbering[right[i]] = left[i];
-		auto found = unusedNumberings.find(right[i]);
+		assert(left[i] < k);
+		assert(right[i] < k);
+		std::set<size_t>::iterator found = unusedNumberings.find(left[i]);
 		if (found != unusedNumberings.end())
 		{
 			unusedNumberings.erase(found);
 		}
+		else
+		{
+			assert(numbering[right[i]] == left[i]);
+		}
+		numbering[right[i]] = left[i];
 	}
 	for (size_t i = 0; i < k; i++)
 	{
 		if (numbering[i] == -1)
 		{
-			auto found = unusedNumberings.lower_bound(0);
+			std::set<size_t>::iterator found = unusedNumberings.lower_bound(0);
 			assert(found != unusedNumberings.end());
 			numbering[i] = *found;
 			unusedNumberings.erase(found);
 		}
 	}
 	return numbering;
+}
+
+void verifyNumbering(std::vector<size_t> numbering, size_t k)
+{
+	std::vector<bool> used;
+	used.resize(k, false);
+	for (auto x : numbering)
+	{
+		assert(x < k);
+		assert(!used[x]);
+		used[x] = true;
+	}
 }
 
 class PartitionContainer
@@ -323,6 +341,11 @@ size_t PartitionContainer::extendPartition(size_t partitionNum, Partition extens
 	std::vector<size_t> right { extension.assignments.begin()+(std::get<1>(partitionsLinkedList[partitionNum])+1-left.size()-extension.minRow), extension.assignments.begin()+(std::get<1>(partitionsLinkedList[partitionNum])-extension.minRow+1) };
 	assert(left.size() == right.size());
 	std::vector<size_t> numbering = getNumbering(left, right, k);
+
+	Partition leftPartition{left.begin(), left.end(), k};
+	Partition rightPartition{right.begin(), right.end(), k};
+	assert(leftPartition.extends(rightPartition));
+	verifyNumbering(numbering, k);
 
 	//insert part after overlap
 	pos = partitionNum;
@@ -487,6 +510,8 @@ Partition Partition::merge(Partition second)
 	std::vector<size_t> rightPart { second.assignments.begin()+(intersectionStart-second.minRow), second.assignments.begin()+(intersectionEnd-second.minRow) };
 	std::vector<size_t> numbering = getNumbering(leftPart, rightPart, k);
 	
+	verifyNumbering(numbering, k);
+
 	for (size_t i = ret.maxRow; i < second.maxRow; i++)
 	{
 		ret.assignments.push_back(numbering[second.assignments[i-second.minRow]]);
@@ -676,6 +701,17 @@ std::vector<std::vector<size_t>> findExtensions(std::vector<Partition> lastRow, 
 	return ret;
 }
 
+void verifyExtensions(std::vector<Partition> lastRow, std::vector<Partition> newRow, std::vector<std::vector<size_t>> extensions)
+{
+	for (size_t i = 0; i < extensions.size(); i++)
+	{
+		for (auto y : extensions[i])
+		{
+			assert(newRow[i].extends(lastRow[y]));
+		}
+	}
+}
+
 Partition Partition::filter(size_t newMinRow, size_t newMaxRow)
 {
 	newMinRow = std::max(newMinRow, minRow);
@@ -813,6 +849,9 @@ std::pair<Partition, double> haplotype(std::vector<SNPSupport> supports, size_t 
 			std::vector<double> newRowCosts;
 			std::vector<size_t> newOptimalPartitions;
 			std::vector<std::vector<size_t>> extensions = findExtensions(oldRowPartitions, newRowPartitions);
+
+			verifyExtensions(oldRowPartitions, newRowPartitions, extensions);
+
 			for (size_t i = 0; i < extensions.size(); i++)
 			{
 				double cost = 0;
