@@ -1,5 +1,5 @@
 //g++ matrix_bander.cpp variant_utils.cpp fasta_utils.cpp -std=c++11 -o matrix_bander.exe
-//./matrix_bander.exe inputSupportsFile barycentricIterations outputSupportsFile renumberingsFile temperature temperatureMultiplier annealingIterationr
+//./matrix_bander.exe inputSupportsFile barycentricIterations outputSupportsFile renumberingsFile temperature temperatureMultiplier annealingIterationr rowDistanceIterations rowDistanceCutoff
 
 #include <iostream>
 #include <map>
@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cmath>
 #include <cassert>
+#include <functional>
 
 #include "variant_utils.h"
 
@@ -133,12 +134,28 @@ SupportRenumbering getSupportRenumbering(const std::vector<MovedSupport>& suppor
 	return ret;
 }
 
-SupportRenumbering makeBandedBarycentric(const std::vector<SNPSupport>& supports, size_t iterations)
+SupportRenumbering getIdentityRenumbering(const std::vector<SNPSupport>& supports)
 {
-	std::vector<MovedSupport> locations;
+	SupportRenumbering ret;
 	for (auto x : supports)
 	{
-		locations.emplace_back(x);
+		ret.addReadRenumbering(x.readNum, x.readNum);
+		ret.addSNPRenumbering(x.SNPnum, x.SNPnum);
+	}
+	return ret;
+}
+
+template <typename RowFunction>
+SupportRenumbering makeBandedAlternating(const std::vector<SNPSupport>& supports, SupportRenumbering initialRenumbering, size_t iterations, RowFunction rowOrderer)
+{
+	std::vector<MovedSupport> locations;
+	
+	{
+		std::vector<SNPSupport> renumbered = renumberSupports(supports, initialRenumbering);
+		for (auto x : renumbered)
+		{
+			locations.emplace_back(x);
+		}
 	}
 
 	std::vector<MovedSupport> best { locations };
@@ -147,11 +164,12 @@ SupportRenumbering makeBandedBarycentric(const std::vector<SNPSupport>& supports
 	for (size_t i = 0; i < iterations; i++)
 	{
 		//sort/transpose twice so result won't be transposed
-		locations = barycentricSort(locations);
+		locations = rowOrderer(locations);
 		locations = transpose(locations);
-		locations = barycentricSort(locations);
+		locations = rowOrderer(locations);
 		locations = transpose(locations);
 
+		assert(getSupportRenumbering(locations).checkValidity());
 		double newEnergy = getEnergy(locations);
 		if (newEnergy < bestEnergy)
 		{
@@ -161,7 +179,13 @@ SupportRenumbering makeBandedBarycentric(const std::vector<SNPSupport>& supports
 			assert(getSupportRenumbering(best).checkValidity());
 		}
 	}
-	return getSupportRenumbering(best);
+	SupportRenumbering result = getSupportRenumbering(best);
+	return initialRenumbering.merge(result);
+}
+
+SupportRenumbering makeBandedBarycentric(const std::vector<SNPSupport>& supports, SupportRenumbering numbering, size_t iterations)
+{
+	return makeBandedAlternating(supports, numbering, iterations, barycentricSort);
 }
 
 SupportRenumbering transpose(const SupportRenumbering& renumbering)
@@ -494,20 +518,156 @@ SupportRenumbering makeBandedSimulatedAnnealing(const std::vector<SNPSupport>& s
 	return best;
 }
 
+size_t rowDistance(const std::vector<MovedSupport>& supports, size_t firstRowNum, size_t secondRowNum)
+{
+	std::vector<bool> firstRow;
+	std::vector<bool> secondRow;
+	for (auto x : supports)
+	{
+		if (x.newRowNum == firstRowNum || x.newRowNum == secondRowNum)
+		{
+			if (firstRow.size() <= x.newColNum)
+			{
+				firstRow.resize(x.newColNum+1, false);
+				secondRow.resize(x.newColNum+1, false);
+			}
+		}
+		if (x.newRowNum == firstRowNum)
+		{
+			firstRow[x.newColNum] = true;
+		}
+		if (x.newRowNum == secondRowNum)
+		{
+			secondRow[x.newColNum] = true;
+		}
+	}
+	size_t result = 0;
+	for (size_t i = 0; i < firstRow.size(); i++)
+	{
+		if (firstRow[i] != secondRow[i])
+		{
+			result++;
+		}
+	}
+	return result;
+}
+
+size_t rowLeftness(const std::vector<MovedSupport>& supports, size_t rowIndex)
+{
+	size_t ret = -1;
+	for (auto x : supports)
+	{
+		if (x.newRowNum == rowIndex)
+		{
+			ret = std::min(ret, x.newColNum);
+		}
+	}
+	return ret;
+}
+
+std::vector<MovedSupport> greedyRowDistanceSorter(const std::vector<MovedSupport>& old, int breakpointDistance)
+{
+	size_t rows = old[0].newRowNum;
+	for (auto x : old)
+	{
+		rows = std::max(rows, x.newRowNum);
+	}
+	rows += 1;
+
+	std::vector<size_t> breakpoints;
+	breakpoints.push_back(0);
+	for (size_t a = 1; a < rows; a++)
+	{
+		if (rowDistance(old, a-1, a) >= breakpointDistance)
+		{
+			breakpoints.push_back(a);
+		}
+	}
+	if (breakpoints.size() < 2)
+	{
+		return old;
+	}
+	std::vector<bool> breakpointUsed;
+	std::vector<size_t> breakpointOrdering;
+
+	size_t leftmostBlockIndex = 0;
+	size_t leftmostBlockLeftness = rowLeftness(old, 0);
+	for (size_t i = 0; i < breakpoints.size(); i++)
+	{
+		size_t newBlockLeftness = rowLeftness(old, breakpoints[i]);
+		if (newBlockLeftness < leftmostBlockLeftness)
+		{
+			leftmostBlockLeftness = newBlockLeftness;
+			leftmostBlockIndex = i;
+		}
+	}
+	breakpointOrdering.push_back(leftmostBlockIndex);
+
+	breakpoints.push_back(rows);
+	breakpointUsed.resize(breakpoints.size(), false);
+	breakpointUsed[breakpointOrdering[0]] = true;
+	for (size_t iteration = 0; iteration < breakpoints.size()-2; iteration++)
+	{
+		size_t bestDistance = 0;
+		size_t bestDistanceIndex = 0;
+		for (size_t i = 0; i < breakpoints.size()-1; i++)
+		{
+			if (!breakpointUsed[i])
+			{
+				size_t distance = rowDistance(old, breakpoints[breakpointOrdering.back()+1]-1, breakpoints[i]);
+				if (distance < bestDistance || bestDistanceIndex == 0)
+				{
+					bestDistanceIndex = i;
+					bestDistance = distance;
+				}
+			}
+		}
+		breakpointUsed[bestDistanceIndex] = true;
+		breakpointOrdering.push_back(bestDistanceIndex);
+	}
+
+	std::vector<MovedSupport> ret;
+	size_t currentRow = 0;
+	for (size_t i = 0; i < breakpointOrdering.size(); i++)
+	{
+		for (auto x : old)
+		{
+			if (x.newRowNum >= breakpoints[breakpointOrdering[i]] && x.newRowNum < breakpoints[breakpointOrdering[i]+1])
+			{
+				ret.emplace_back(x);
+				ret.back().newRowNum = currentRow+x.newRowNum-breakpoints[breakpointOrdering[i]];
+			}
+		}
+		currentRow += breakpoints[breakpointOrdering[i]+1]-breakpoints[breakpointOrdering[i]];
+	}
+	return ret;
+}
+
+SupportRenumbering makeBandedRowDistance(const std::vector<SNPSupport>& supports, SupportRenumbering numbering, size_t iterations, size_t rowDistance)
+{
+	return makeBandedAlternating(supports, numbering, iterations, std::bind(greedyRowDistanceSorter, std::placeholders::_1, rowDistance));
+}
+
 int main(int argc, char** argv)
 {
 	std::vector<SNPSupport> supports = loadSupports(argv[1]);
 
+	SupportRenumbering numbering = getIdentityRenumbering(supports);
+
+	std::cerr << "row distance banding\n";
+	numbering = makeBandedRowDistance(supports, numbering, std::stol(argv[8]), std::stol(argv[9]));
+	assert(numbering.checkValidity());
+
 	std::cerr << "barycentric banding\n";
-	SupportRenumbering firstRenumbering = makeBandedBarycentric(supports, std::stol(argv[2]));
-	assert(firstRenumbering.checkValidity());
+	numbering = makeBandedBarycentric(supports, numbering, std::stol(argv[2]));
+	assert(numbering.checkValidity());
 
 	std::cerr << "annealing banding\n";
-	SupportRenumbering secondRenumbering = makeBandedSimulatedAnnealing(supports, firstRenumbering, std::stoi(argv[7]), std::stod(argv[5]), std::stod(argv[6]));
-	assert(secondRenumbering.checkValidity());
+	numbering = makeBandedSimulatedAnnealing(supports, numbering, std::stoi(argv[7]), std::stod(argv[5]), std::stod(argv[6]));
+	assert(numbering.checkValidity());
 
 	std::cerr << "writing output\n";
-	SupportRenumbering renumbering = secondRenumbering;
+	SupportRenumbering renumbering = numbering;
 	std::vector<SNPSupport> result = renumberSupports(supports, renumbering);
 	assert(renumbering.checkValidity());
 	writeSupports(result, argv[3]);
