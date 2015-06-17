@@ -87,33 +87,33 @@ std::vector<SNPSupport> getMovedSupports(const std::vector<MovedSupport>& suppor
 
 double getEnergy(std::vector<SNPSupport> supports)
 {
-	std::vector<size_t> minColumn;
-	std::vector<size_t> maxColumn;
+	std::vector<size_t> minRow;
+	std::vector<size_t> maxRow;
 	for (auto x : supports)
 	{
-		if (minColumn.size() <= x.readNum)
+		if (minRow.size() <= x.SNPnum)
 		{
-			minColumn.resize(x.readNum+1, -1);
+			minRow.resize(x.SNPnum+1, -1);
 		}
-		if (maxColumn.size() <= x.readNum)
+		if (maxRow.size() <= x.SNPnum)
 		{
-			maxColumn.resize(x.readNum+1, 0);
+			maxRow.resize(x.SNPnum+1, 0);
 		}
-		minColumn[x.readNum] = std::min(minColumn[x.readNum], x.SNPnum);
-		maxColumn[x.readNum] = std::max(maxColumn[x.readNum], x.SNPnum);
+		minRow[x.SNPnum] = std::min(minRow[x.SNPnum], x.readNum);
+		maxRow[x.SNPnum] = std::max(maxRow[x.SNPnum], x.readNum);
 	}
-	for (size_t i = 1; i < maxColumn.size(); i++)
+	for (size_t i = 1; i < maxRow.size(); i++)
 	{
-		maxColumn[i] = std::max(maxColumn[i], maxColumn[i-1]);
+		maxRow[i] = std::max(maxRow[i], maxRow[i-1]);
 	}
-	for (size_t i = minColumn.size()-2; i < minColumn.size(); i--)
+	for (size_t i = minRow.size()-2; i < minRow.size(); i--)
 	{
-		minColumn[i] = std::min(minColumn[i], minColumn[i+1]);
+		minRow[i] = std::min(minRow[i], minRow[i+1]);
 	}
 	double ret = 0;
-	for (size_t i = 0; i < minColumn.size(); i++)
+	for (size_t i = 0; i < minRow.size(); i++)
 	{
-		ret += pow(2, maxColumn[i]-minColumn[i]);
+		ret += pow(2, maxRow[i]-minRow[i]);
 	}
 	return ret;
 }
@@ -410,10 +410,39 @@ SupportRenumbering relocate(const SupportRenumbering& numbering)
 	return ret;
 }
 
-SupportRenumbering getNeighbor(const SupportRenumbering& numbering)
+SupportRenumbering shrinkBiggestColumn(const SupportRenumbering& numbering, const std::vector<SNPSupport>& supports)
+{
+	std::vector<size_t> minRow;
+	std::vector<size_t> maxRow;
+	minRow.resize(numbering.SNPSize(), -1);
+	maxRow.resize(numbering.SNPSize(), 0);
+	for (auto x : supports)
+	{
+		size_t readNum = numbering.getReadRenumbering(x.readNum);
+		size_t SNPnum = numbering.getSNPRenumbering(x.SNPnum);
+		minRow[SNPnum] = std::min(minRow[SNPnum], readNum);
+		maxRow[SNPnum] = std::max(maxRow[SNPnum], readNum);
+	}
+	size_t biggestSize = maxRow[0]-minRow[0];
+	size_t biggestIndex = 0;
+	for (size_t i = 1; i < maxRow.size(); i++)
+	{
+		if (maxRow[i]-minRow[i] > biggestSize)
+		{
+			biggestSize = maxRow[i]-minRow[i];
+			biggestIndex = i;
+		}
+	}
+	SupportRenumbering ret { numbering };
+	ret.swapRows(minRow[biggestIndex], minRow[biggestIndex]+1);
+	ret.swapRows(maxRow[biggestIndex], maxRow[biggestIndex]-1);
+	return ret;
+}
+
+SupportRenumbering getNeighbor(const SupportRenumbering& numbering, const std::vector<SNPSupport>& supports)
 {
     std::mt19937 mt {(size_t)std::chrono::system_clock::now().time_since_epoch().count()};
-    std::uniform_int_distribution<int> method{0, 3};
+    std::uniform_int_distribution<int> method{0, 4};
     int chosen = method(mt);
     SupportRenumbering ret {numbering};
 
@@ -430,6 +459,9 @@ SupportRenumbering getNeighbor(const SupportRenumbering& numbering)
 		break;
 	case 3:
 		ret = adjSwapOneColumn(numbering);
+		break;
+	case 4:
+		ret = shrinkBiggestColumn(numbering, supports);
 		break;
 /*	case 0:
 		ret = swapK(numbering, 1);
@@ -500,7 +532,7 @@ SupportRenumbering makeBandedSimulatedAnnealing(const std::vector<SNPSupport>& s
 
 	for (int i = 0; i < iterations; i++)
 	{
-		SupportRenumbering newRenumbering = getNeighbor(current);
+		SupportRenumbering newRenumbering = getNeighbor(current, supports);
 		double newEnergy = getEnergy(renumberSupports(supports, newRenumbering));
 		if (newEnergy < bestEnergy)
 		{
