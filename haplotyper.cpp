@@ -20,7 +20,7 @@ PartitionAssignments::PartitionAssignmentElement::PartitionAssignmentElement(Par
 namespace std
 {
 	template <>
-	void iter_swap(PartitionAssignments::iterator left, PartitionAssignments::iterator right)
+	void iter_swap(PartitionAssignments::iterator<PartitionAssignments::PartitionAssignmentElement> left, PartitionAssignments::iterator<PartitionAssignments::PartitionAssignmentElement> right)
 	{
 		size_t value = *left;
 		*left = (size_t)*right;
@@ -60,8 +60,13 @@ PartitionAssignments::PartitionAssignmentElementConst::operator size_t() const
 	return (size_t)el;
 }
 
-PartitionAssignments::PartitionAssignmentElementConst::PartitionAssignmentElementConst(const PartitionAssignments& container, size_t pos)	:
+PartitionAssignments::PartitionAssignmentElementConst::PartitionAssignmentElementConst(const PartitionAssignments& container, size_t pos) :
 	el(const_cast<PartitionAssignments&>(container), pos)
+{
+}
+
+PartitionAssignments::PartitionAssignmentElementConst::PartitionAssignmentElementConst(PartitionAssignmentElement el) :
+	el(el)
 {
 }
 
@@ -93,81 +98,36 @@ PartitionAssignments::PartitionAssignmentElement& PartitionAssignments::Partitio
 	return *this;
 }
 
-PartitionAssignments::iterator::iterator(PartitionAssignments& container, size_t pos) :
-	container(container),
-	pos(pos)
-{
-}
-
-PartitionAssignments::iterator PartitionAssignments::iterator::operator++()
-{
-	pos++;
-	return *this;
-}
-
-PartitionAssignments::iterator PartitionAssignments::iterator::operator++(int)
-{
-	PartitionAssignments::iterator ret = *this;
-	pos++;
-	return ret;
-}
-
-PartitionAssignments::iterator PartitionAssignments::iterator::operator--()
-{
-	pos--;
-	return *this;
-}
-
-PartitionAssignments::iterator PartitionAssignments::iterator::operator--(int)
-{
-	PartitionAssignments::iterator ret = *this;
-	pos--;
-	return ret;
-}
-
-PartitionAssignments::PartitionAssignmentElement PartitionAssignments::iterator::operator*()
-{
-	return container[pos];
-}
-
-bool PartitionAssignments::iterator::operator==(const PartitionAssignments::iterator& second)
-{
-	return &container == &second.container && pos == second.pos;
-}
-
-bool PartitionAssignments::iterator::operator!=(const PartitionAssignments::iterator& second)
-{
-	return !(*this == second);
-}
-
-PartitionAssignments::iterator PartitionAssignments::iterator::operator+(size_t add)
-{
-	pos += add;
-	return *this;
-}
-
-PartitionAssignments::iterator PartitionAssignments::iterator::operator-(size_t deduct)
-{
-	pos -= deduct;
-	return *this;
-}
-
 PartitionAssignments::PartitionAssignments() : k(0), log2k(0), actualSize(0), data()
 {
 }
 
-PartitionAssignments::iterator PartitionAssignments::begin()
+PartitionAssignments::iterator<PartitionAssignments::PartitionAssignmentElement> PartitionAssignments::begin()
 {
 	assert(log2k > 0);
 	assert(k > 0);
-	return PartitionAssignments::iterator(*this, 0);
+	return PartitionAssignments::iterator<PartitionAssignments::PartitionAssignmentElement>(*this, 0);
 }
 
-PartitionAssignments::iterator PartitionAssignments::end()
+PartitionAssignments::iterator<PartitionAssignments::PartitionAssignmentElement> PartitionAssignments::end()
 {
 	assert(log2k > 0);
 	assert(k > 0);
-	return PartitionAssignments::iterator(*this, actualSize);
+	return PartitionAssignments::iterator<PartitionAssignments::PartitionAssignmentElement>(*this, actualSize);
+}
+
+PartitionAssignments::iterator<PartitionAssignments::PartitionAssignmentElementConst> PartitionAssignments::begin() const
+{
+	assert(log2k > 0);
+	assert(k > 0);
+	return PartitionAssignments::iterator<PartitionAssignments::PartitionAssignmentElementConst>(const_cast<PartitionAssignments&>(*this), 0);
+}
+
+PartitionAssignments::iterator<PartitionAssignments::PartitionAssignmentElementConst> PartitionAssignments::end() const
+{
+	assert(log2k > 0);
+	assert(k > 0);
+	return PartitionAssignments::iterator<PartitionAssignments::PartitionAssignmentElementConst>(const_cast<PartitionAssignments&>(*this), actualSize);
 }
 
 void PartitionAssignments::push_back(size_t value)
@@ -418,7 +378,7 @@ void PartitionContainer::clearUnused(std::vector<size_t> used)
 	}
 }
 
-size_t Partition::getk()
+size_t Partition::getk() const
 {
 	return k;
 }
@@ -490,7 +450,7 @@ std::vector<Partition> Partition::getAllPartitions(size_t start, size_t end, siz
 	return ret;
 }
 
-Partition Partition::merge(Partition second)
+Partition Partition::merge(Partition second) const
 {
 	Partition ret { *this };
 /*	if (maxRow < second.minRow)
@@ -521,7 +481,7 @@ Partition Partition::merge(Partition second)
 	return ret;
 }
 
-double Partition::wCost(const Column& col, char variant, size_t haplotype)
+double Partition::wCost(const Column& col, char variant, size_t haplotype) const
 {
 	double sum = 0;
 	assert(col.minRow == minRow);
@@ -537,7 +497,7 @@ double Partition::wCost(const Column& col, char variant, size_t haplotype)
 	return sum;
 }
 
-double Partition::deltaCost(const Column& col)
+double Partition::deltaCost(const Column& col) const
 {
 	double sum = 0;
 	for (size_t i = 0; i < k; i++)
@@ -548,7 +508,7 @@ double Partition::deltaCost(const Column& col)
 	return sum;
 }
 
-bool Partition::extends(Partition second)
+bool Partition::extends(Partition second) const
 {
 	size_t intersectionStart = std::max(minRow, second.minRow);
 	size_t intersectionEnd = std::min(maxRow, second.maxRow);
@@ -609,7 +569,7 @@ bool partitionCompare(const Partition& left, const Partition& right)
 }
 
 //first index is new partition index, second index (inner vector) is old partition indices
-std::vector<std::vector<size_t>> findExtensions(std::vector<Partition> lastRow, std::vector<Partition> newRow)
+std::vector<std::vector<size_t>> findExtensions(const std::vector<Partition>& lastRow, const std::vector<Partition>& newRow)
 {
 	std::vector<std::vector<size_t>> ret;
 	ret.resize(newRow.size());
@@ -701,18 +661,22 @@ std::vector<std::vector<size_t>> findExtensions(std::vector<Partition> lastRow, 
 	return ret;
 }
 
-void verifyExtensions(std::vector<Partition> lastRow, std::vector<Partition> newRow, std::vector<std::vector<size_t>> extensions)
+bool verifyExtensions(const std::vector<Partition>& lastRow, const std::vector<Partition>& newRow, const std::vector<std::vector<size_t>>& extensions)
 {
 	for (size_t i = 0; i < extensions.size(); i++)
 	{
 		for (auto y : extensions[i])
 		{
-			assert(newRow[i].extends(lastRow[y]));
+			if (!newRow[i].extends(lastRow[y]))
+			{
+				return false;
+			}
 		}
 	}
+	return true;
 }
 
-Partition Partition::filter(size_t newMinRow, size_t newMaxRow)
+Partition Partition::filter(size_t newMinRow, size_t newMaxRow) const
 {
 	newMinRow = std::max(newMinRow, minRow);
 	newMaxRow = std::min(newMaxRow, maxRow);
@@ -850,7 +814,7 @@ std::pair<Partition, double> haplotype(std::vector<SNPSupport> supports, size_t 
 			std::vector<size_t> newOptimalPartitions;
 			std::vector<std::vector<size_t>> extensions = findExtensions(oldRowPartitions, newRowPartitions);
 
-			verifyExtensions(oldRowPartitions, newRowPartitions, extensions);
+			assert(verifyExtensions(oldRowPartitions, newRowPartitions, extensions));
 
 			for (size_t i = 0; i < extensions.size(); i++)
 			{

@@ -55,30 +55,72 @@ public:
 		operator size_t() const;
 	private:
 		PartitionAssignmentElementConst(const PartitionAssignments& container, size_t pos);
+		PartitionAssignmentElementConst(PartitionAssignmentElement el);
 		PartitionAssignmentElement el;
 		friend class PartitionAssignments;
 	};
+	template <typename ElementType>
 	class iterator
 	{
 	public:
 		typedef size_t difference_type;
-		typedef PartitionAssignmentElement value_type;
-		typedef PartitionAssignmentElement& reference;
-		typedef PartitionAssignmentElement* pointer;
+		typedef ElementType value_type;
+		typedef ElementType& reference;
+		typedef ElementType* pointer;
 		typedef std::bidirectional_iterator_tag iterator_category;
-		PartitionAssignmentElement operator*();
+		ElementType operator*() const
+		{
+			return container[pos];
+		}
 		iterator(const iterator& second) = default;
 		iterator& operator=(const iterator& second) = default;
-		iterator operator++();
-		iterator operator++(int);
-		iterator operator--();
-		iterator operator--(int);
-		iterator operator+(size_t add);
-		iterator operator-(size_t deduct);
-		bool operator==(const iterator& second);
-		bool operator!=(const iterator& second);
+		iterator operator++()
+		{
+			pos++;
+			return *this;
+		}
+		iterator operator++(int)
+		{
+			PartitionAssignments::iterator<ElementType> ret = *this;
+			pos++;
+			return ret;
+		}
+		iterator operator--()
+		{
+			pos--;
+			return *this;
+		}
+		iterator operator--(int)
+		{
+			PartitionAssignments::iterator<ElementType> ret = *this;
+			pos--;
+			return ret;
+		}
+		iterator operator+(size_t add)
+		{
+			pos += add;
+			return *this;
+		}
+		iterator operator-(size_t deduct)
+		{
+			pos -= deduct;
+			return *this;
+		}
+		bool operator==(const iterator& second) const
+		{
+			return &container == &second.container && pos == second.pos;
+		}
+		bool operator!=(const iterator& second) const
+		{
+			return !(*this == second);
+		}
 	private:
-		iterator(PartitionAssignments& container, size_t pos);
+		iterator(PartitionAssignments& container, size_t pos) :
+			container(container),
+			pos(pos)
+		{
+		}
+
 		PartitionAssignments& container;
 		size_t pos;
 		friend class PartitionAssignments;
@@ -91,8 +133,10 @@ public:
 	size_t size() const;
 	size_t capacity() const;
 	void setk(size_t k);
-	iterator begin();
-	iterator end();
+	iterator<PartitionAssignmentElement> begin();
+	iterator<PartitionAssignmentElement> end();
+	iterator<PartitionAssignmentElementConst> begin() const;
+	iterator<PartitionAssignmentElementConst> end() const;
 private:
 	void extendCapacity(size_t newCapacity, size_t defaultValue);
 	size_t k;
@@ -110,19 +154,19 @@ public:
 	static std::vector<Partition> getAllPartitions(size_t start, size_t end, size_t k);
 	template <typename Iterator>
 	Partition(Iterator start, Iterator end, size_t k);
-	Partition filter(size_t newMinRow, size_t newMaxRow);
-	bool extends(Partition second);
+	Partition filter(size_t newMinRow, size_t newMaxRow) const;
+	bool extends(Partition second) const;
 	void unpermutate();
-	double deltaCost(const Column& col);
-	Partition merge(Partition second);
+	double deltaCost(const Column& col) const;
+	Partition merge(Partition second) const;
 	PartitionAssignments assignments;
-	size_t getk();
+	size_t getk() const;
 	void setk(size_t value);
 	size_t minRow;
 	size_t maxRow;
 private:
 	size_t k;
-	double wCost(const Column& col, char variant, size_t haplotype);
+	double wCost(const Column& col, char variant, size_t haplotype) const;
 };
 
 std::pair<Partition, double> haplotype(std::vector<SNPSupport> supports, size_t k);
