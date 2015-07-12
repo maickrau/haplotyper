@@ -15,7 +15,19 @@ std::vector<size_t> loadAssignments(std::string fileName)
 	while (resultsFile.good())
 	{
 		size_t assignment;
-		resultsFile >> assignment;
+		while (resultsFile.peek() == ' ')
+		{
+			resultsFile.get();
+		}
+		if (resultsFile.peek() == '-')
+		{
+			assignment = -1;
+			resultsFile.get();
+		}
+		else
+		{
+			resultsFile >> assignment;
+		}
 		if (resultsFile.good())
 		{
 			assignments.push_back(assignment);
@@ -73,14 +85,23 @@ std::vector<std::vector<size_t>> getAllPermutations(size_t size)
 
 size_t calculateResult(std::vector<size_t> genomes, std::vector<size_t> assignments)
 {
-	std::vector<std::vector<size_t>> permutations = getAllPermutations(*max_element(genomes.begin(), genomes.end())+1);
+	size_t maxAssignment = 0;
+	for (auto x : assignments)
+	{
+		if (x != -1)
+		{
+			maxAssignment = std::max(maxAssignment, x);
+		}
+	}
+	maxAssignment++;
+	std::vector<std::vector<size_t>> permutations = getAllPermutations(maxAssignment);
 	size_t minValue = -1;
 	for (auto permutation : permutations)
 	{
 		size_t thisValue = 0;
-		for (size_t i = 0; i < genomes.size(); i++)
+		for (size_t i = 0; i < genomes.size() && i < assignments.size(); i++)
 		{
-			if (genomes[i] != permutation[assignments[i]])
+			if (assignments[i] != -1 && genomes[i] != permutation[assignments[i]])
 			{
 				thisValue++;
 			}

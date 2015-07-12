@@ -26,7 +26,14 @@ void writeResult(std::vector<size_t> assignments, size_t error, std::string file
 	std::ofstream file { fileName };
 	for (size_t i = 0; i < assignments.size(); i++)
 	{
-		file << assignments[i] << " ";
+		if (assignments[i] == -1)
+		{
+			file << "- ";
+		}
+		else
+		{
+			file << assignments[i] << " ";
+		}
 	}
 	file << "\n" << error << "\n";
 }
