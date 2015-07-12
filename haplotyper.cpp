@@ -5,6 +5,7 @@
 #include <valarray>
 #include <tuple>
 #include <cmath>
+#include <cstring>
 
 #include "variant_utils.h"
 #include "haplotyper.h"
@@ -481,31 +482,42 @@ Partition Partition::merge(Partition second) const
 	return ret;
 }
 
-double Partition::wCost(const Column& col, char variant, size_t haplotype) const
-{
-	double sum = 0;
-	assert(col.minRow == minRow);
-	assert(col.maxRow >= maxRow);
-	assert(col.maxRow <= maxRow);
-	for (size_t i = col.minRow; i < col.maxRow; i++)
-	{
-		if (col.variants[i] != 0 && col.variants[i] != variant && assignments[i-minRow] == haplotype)
-		{
-			sum += col.costs[i];
-		}
-	}
-	return sum;
-}
-
 double Partition::deltaCost(const Column& col) const
 {
-	double sum = 0;
+	std::vector<std::array<size_t, 4>> costs;
+	std::vector<size_t> costSum;
+	costs.resize(k, {0, 0, 0, 0});
+	costSum.resize(k, 0);
+	for (size_t i = col.minRow; i < col.maxRow; i++)
+	{
+		switch(col.variants[i])
+		{
+		case 'A':
+			costs[assignments[i-minRow]][0] += col.costs[i];
+			costSum[assignments[i-minRow]] += col.costs[i];
+			break;
+		case 'T':
+			costs[assignments[i-minRow]][1] += col.costs[i];
+			costSum[assignments[i-minRow]] += col.costs[i];
+			break;
+		case 'C':
+			costs[assignments[i-minRow]][2] += col.costs[i];
+			costSum[assignments[i-minRow]] += col.costs[i];
+			break;
+		case 'G':
+			costs[assignments[i-minRow]][3] += col.costs[i];
+			costSum[assignments[i-minRow]] += col.costs[i];
+			break;
+		default:
+			break;
+		}
+	}
+	size_t totalCost = 0;
 	for (size_t i = 0; i < k; i++)
 	{
-		double partSum = std::min(std::min(wCost(col, 'A', i), wCost(col, 'T', i)), std::min(wCost(col, 'C', i), wCost(col, 'G', i)));
-		sum += partSum;
+		totalCost += costSum[i]-std::max(std::max(costs[i][0], costs[i][1]), std::max(costs[i][2], costs[i][3]));
 	}
-	return sum;
+	return totalCost;
 }
 
 bool Partition::extends(Partition second) const
@@ -543,16 +555,14 @@ bool Partition::extends(Partition second) const
 //basically <
 bool partitionCompare(const Partition& left, const Partition& right)
 {
-	for (size_t i = 0; i < left.assignments.actualSize*left.assignments.log2k/8; i++)
+	int compare = memcmp((const char*)left.assignments.data.data(), (const char*)right.assignments.data.data(), left.assignments.actualSize*left.assignments.log2k/8);
+	if (compare < 0)
 	{
-		if (left.assignments.data[i] < right.assignments.data[i])
-		{
-			return true;
-		}
-		if (left.assignments.data[i] > right.assignments.data[i])
-		{
-			return false;
-		}
+		return true;
+	}
+	if (compare > 0)
+	{
+		return false;
 	}
 	for (size_t i = (left.assignments.actualSize*left.assignments.log2k/8)*8/left.assignments.log2k; i < left.assignments.actualSize; i++)
 	{

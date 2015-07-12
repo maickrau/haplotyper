@@ -166,7 +166,6 @@ public:
 	size_t maxRow;
 private:
 	size_t k;
-	double wCost(const Column& col, char variant, size_t haplotype) const;
 };
 
 std::pair<Partition, double> haplotype(std::vector<SNPSupport> supports, size_t k);
