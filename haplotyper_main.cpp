@@ -15,4 +15,5 @@ int main(int argc, char** argv)
 	}
 	std::cout << "\n";
 	std::cout << result.second;
+	std::cout << "\n";
 }

@@ -127,16 +127,44 @@ std::vector<SNPSupport> renumberSupports(std::vector<SNPSupport> supports, Suppo
 
 SupportRenumbering SupportRenumbering::merge(SupportRenumbering second)
 {
-	assert(readRenumbering.size() == second.readRenumbering.size());
-	assert(SNPRenumbering.size() == second.SNPRenumbering.size());
 	SupportRenumbering ret;
 	for (size_t i = 0; i < readRenumbering.size(); i++)
 	{
-		ret.addReadRenumbering(i, second.getReadRenumbering(readRenumbering[i]));
+		if (readRenumbering[i] == -1)
+		{
+			ret.addReadRenumbering(i, -1);
+		}
+		else
+		{
+			assert(second.readRenumbering.size() > readRenumbering[i]);
+			if (second.hasReadRenumbering(readRenumbering[i]))
+			{
+				ret.addReadRenumbering(i, second.getReadRenumbering(readRenumbering[i]));
+			}
+			else
+			{
+				ret.addReadRenumbering(i, -1);
+			}
+		}
 	}
 	for (size_t i = 0; i < SNPRenumbering.size(); i++)
 	{
-		ret.addSNPRenumbering(i, second.getSNPRenumbering(SNPRenumbering[i]));
+		if (SNPRenumbering[i] == -1)
+		{
+			ret.addSNPRenumbering(i, -1);
+		}
+		else
+		{
+			assert(second.SNPRenumbering.size() > SNPRenumbering[i]);
+			if (second.hasSNPRenumbering(SNPRenumbering[i]))
+			{
+				ret.addSNPRenumbering(i, second.getSNPRenumbering(SNPRenumbering[i]));
+			}
+			else
+			{
+				ret.addSNPRenumbering(i, -1);
+			}
+		}
 	}
 	return ret;
 }
@@ -179,6 +207,16 @@ void SupportRenumbering::addSNPRenumbering(size_t oldSNP, size_t newSNP)
 		assert(SNPRenumbering[oldSNP] == newSNP);
 	}
 	SNPRenumbering[oldSNP] = newSNP;
+}
+
+bool SupportRenumbering::hasReadRenumbering(size_t oldRead) const
+{
+	return readRenumbering[oldRead] != -1;
+}
+
+bool SupportRenumbering::hasSNPRenumbering(size_t oldSNP) const
+{
+	return SNPRenumbering[oldSNP] != -1;
 }
 
 size_t SupportRenumbering::getReadRenumbering(size_t oldRead) const
@@ -236,6 +274,7 @@ void writeRenumbering(SupportRenumbering renumbering, std::string fileName)
 	{
 		file << " " << x;
 	}
+	file << "\n";
 }
 
 SupportRenumbering loadRenumbering(std::string fileName)

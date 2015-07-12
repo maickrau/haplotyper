@@ -61,8 +61,20 @@ void SNPLine::merge(SNPLine second)
 	}
 }
 
-std::vector<SNPSupport> mergeSupports(std::vector<SNPSupport> supports)
+std::pair<SupportRenumbering, std::vector<SNPSupport>> mergeSupports(std::vector<SNPSupport> supports)
 {
+	SupportRenumbering renumbering;
+	size_t maxSNP = 0;
+	for (auto x : supports)
+	{
+		maxSNP = std::max(maxSNP, x.SNPnum);
+	}
+	maxSNP++;
+	for (size_t i = 0; i < maxSNP; i++)
+	{
+		renumbering.addSNPRenumbering(i, i);
+	}
+
 	std::cout << "start\n";
 	std::sort(supports.begin(), supports.end(), [](SNPSupport left, SNPSupport right) { return left.SNPnum < right.SNPnum; });
 	std::stable_sort(supports.begin(), supports.end(), [](SNPSupport left, SNPSupport right) { return left.readNum < right.readNum; });
@@ -89,6 +101,7 @@ std::vector<SNPSupport> mergeSupports(std::vector<SNPSupport> supports)
 	std::vector<SNPLine> merged;
 	merged.push_back(rows[0]);
 	double currentSupport = 1;
+	renumbering.addReadRenumbering(0, 0);
 	std::cout << "merge\n";
 	for (size_t i = 1; i < rows.size(); i++)
 	{
@@ -99,11 +112,14 @@ std::vector<SNPSupport> mergeSupports(std::vector<SNPSupport> supports)
 			{
 				exists = true;
 				merged[a].merge(rows[i]);
+				renumbering.addReadRenumbering(i, a);
+				break;
 			}
 		}
 		if (!exists)
 		{
 			merged.push_back(rows[i]);
+			renumbering.addReadRenumbering(i, merged.size()-1);
 		}
 	}
 	std::cout << "merged from " << rows.size() << " rows to " << merged.size() << " rows\n";
@@ -116,40 +132,14 @@ std::vector<SNPSupport> mergeSupports(std::vector<SNPSupport> supports)
 	}
 	std::stable_sort(ret.begin(), ret.end(), [](SNPSupport left, SNPSupport right) { return left.SNPnum < right.SNPnum; });
 	std::cout << "return\n";
-	return ret;
-}
-
-std::pair<std::unordered_map<size_t, size_t>, std::vector<SNPSupport>> renumber(std::vector<SNPSupport> supports)
-{
-	std::cout << "renumber\n";
-	std::unordered_map<size_t, size_t> newNumber;
-	size_t nextNum = 1;
-	for (auto& x : supports)
-	{
-		if (newNumber.count(x.readNum) == 0)
-		{
-			newNumber[x.readNum] = nextNum;
-			nextNum++;
-		}
-		x.readNum = newNumber[x.readNum];
-	}
-	return std::pair<std::unordered_map<size_t, size_t>, std::vector<SNPSupport>>(newNumber, supports);
-}
-
-void writeRenumbering(std::unordered_map<size_t, size_t> numbering, std::string fileName)
-{
-	std::ofstream file { fileName };
-	for (auto x : numbering)
-	{
-		file << x.first << " " << x.second << "\n";
-	}
+	return std::pair<SupportRenumbering, std::vector<SNPSupport>> { renumbering, ret };
 }
 
 int main(int argc, char** argv)
 {
 	std::vector<SNPSupport> supports = loadSupports(argv[1]);
-	std::vector<SNPSupport> merged = mergeSupports(supports);
-	auto x = renumber(merged);
-	writeSupports(x.second, argv[2]);
-	writeRenumbering(x.first, argv[3]);
+	auto merged = mergeSupports(supports);
+	merged.second = renumberSupports(merged.second, merged.first);
+	writeSupports(merged.second, argv[2]);
+	writeRenumbering(merged.first, argv[3]);
 }

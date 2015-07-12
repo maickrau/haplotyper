@@ -27,6 +27,8 @@ public:
 	void swapColumns(size_t firstColumn, size_t secondColumn);
 	size_t getReadRenumbering(size_t oldRead) const;
 	size_t getSNPRenumbering(size_t oldSNP) const;
+	bool hasReadRenumbering(size_t oldRead) const;
+	bool hasSNPRenumbering(size_t oldSNP) const;
 	size_t readSize() const;
 	size_t SNPSize() const;
 	bool checkValidity() const;
