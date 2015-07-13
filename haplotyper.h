@@ -3,6 +3,8 @@
 
 #include <cstdlib>
 #include <vector>
+#include <set>
+#include <cassert>
 
 #include "variant_utils.h"
 
@@ -14,12 +16,14 @@ public:
 	{
 		static_assert(std::is_constructible<SNPSupport, decltype(*start)>::value, "");
 		variants.resize(maxRow+1, 0);
-		costs.resize(maxRow+1);
+		costs.resize(maxRow+1, 0);
 		while (start != end)
 		{
 			SNPSupport s = *start;
 			if (s.SNPnum == column)
 			{
+				assert(s.readNum <= maxRow);
+				assert(s.variant == 'A' || s.variant == 'T' || s.variant == 'C' || s.variant == 'G');
 				variants[s.readNum] = s.variant;
 				costs[s.readNum] = s.support;
 			}
@@ -32,7 +36,7 @@ public:
 	size_t maxRow;
 };
 
-class Partition;
+class SolidPartition;
 
 class PartitionAssignments
 {
@@ -125,14 +129,12 @@ public:
 		size_t pos;
 		friend class PartitionAssignments;
 	};
-	PartitionAssignments();
+	PartitionAssignments(size_t k);
 	PartitionAssignmentElement operator[](size_t pos);
 	PartitionAssignmentElementConst operator[](size_t pos) const;
 	void push_back(size_t value);
-	void resize(size_t newSize, size_t defaultValue);
 	size_t size() const;
 	size_t capacity() const;
-	void setk(size_t k);
 	iterator<PartitionAssignmentElement> begin();
 	iterator<PartitionAssignmentElement> end();
 	iterator<PartitionAssignmentElementConst> begin() const;
@@ -144,30 +146,50 @@ private:
 	size_t actualSize;
 	std::vector<unsigned char> data;
 	friend class PartitionAssignments::PartitionAssignmentElement;
-	friend bool partitionCompare(const Partition& left, const Partition& right);
+	friend bool partitionCompare(const SolidPartition& left, const SolidPartition& right);
 };
 
-class Partition
+class SolidPartition
 {
 public:
-	Partition();
-	static std::vector<Partition> getAllPartitions(size_t start, size_t end, size_t k);
+	SolidPartition(size_t k);
+	static std::vector<SolidPartition> getAllPartitions(size_t start, size_t end, size_t k);
 	template <typename Iterator>
-	Partition(Iterator start, Iterator end, size_t k);
-	Partition filter(size_t newMinRow, size_t newMaxRow) const;
-	bool extends(Partition second) const;
+	SolidPartition(Iterator start, Iterator end, size_t k);
+	bool extends(const SolidPartition& second) const;
 	void unpermutate();
-	double deltaCost(const Column& col) const;
-	Partition merge(Partition second) const;
-	PartitionAssignments assignments;
 	size_t getk() const;
-	void setk(size_t value);
+	size_t getValue(size_t index) const;
+
+	PartitionAssignments assignments;
 	size_t minRow;
 	size_t maxRow;
 private:
 	size_t k;
 };
 
-std::pair<Partition, double> haplotype(std::vector<SNPSupport> supports, size_t k);
+class SparsePartition
+{
+public:
+	SparsePartition(size_t k);
+	SparsePartition(SolidPartition inner, std::set<size_t> actives);
+	static std::vector<SparsePartition> getAllPartitions(std::set<size_t> actives, size_t k);
+	SparsePartition merge(const SparsePartition& second) const;
+	SolidPartition getComparableIntersection(const SparsePartition& second) const;
+	SolidPartition getComparableIntersection(const std::set<size_t>& newActives) const;
+	SolidPartition getSolid() const;
+	bool extends(const SparsePartition& second) const;
+	double deltaCost(const Column& col) const;
+	size_t getk() const;
+
+	SolidPartition inner;
+	std::set<size_t> actives;
+private:
+	size_t getAssignment(size_t loc) const;
+	SolidPartition getSubset(const std::set<size_t>& subset) const;
+	size_t k;
+};
+
+std::pair<SolidPartition, double> haplotype(std::vector<SNPSupport> supports, size_t k);
 
 #endif

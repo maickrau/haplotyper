@@ -2,15 +2,251 @@
 #include <iostream>
 #include <cassert>
 #include <chrono>
-#include <valarray>
 #include <tuple>
 #include <cmath>
 #include <cstring>
+#include <set>
 
 #include "variant_utils.h"
 #include "haplotyper.h"
 
-Partition::Partition() {}
+
+//preserve numbering of overlapping haplotypes
+//eg {0, 1, 2}
+//      {0, 1, 0}
+//=>
+//   {0, 1, 2, 1}
+std::vector<size_t> getNumbering(std::vector<size_t> left, std::vector<size_t> right, size_t k)
+{
+	assert(left.size() == right.size());
+	std::vector<size_t> numbering;
+	numbering.resize(k, -1);
+	std::set<size_t> unusedNumberings;
+	for (size_t i = 0; i < k; i++)
+	{
+		unusedNumberings.insert(i);
+	}
+	for (size_t i = 0; i < left.size(); i++)
+	{
+		assert(left[i] < k);
+		assert(right[i] < k);
+		std::set<size_t>::iterator found = unusedNumberings.find(left[i]);
+		if (found != unusedNumberings.end())
+		{
+			unusedNumberings.erase(found);
+		}
+		else
+		{
+			assert(numbering[right[i]] == left[i]);
+		}
+		numbering[right[i]] = left[i];
+	}
+	for (size_t i = 0; i < k; i++)
+	{
+		if (numbering[i] == -1)
+		{
+			std::set<size_t>::iterator found = unusedNumberings.lower_bound(0);
+			assert(found != unusedNumberings.end());
+			numbering[i] = *found;
+			unusedNumberings.erase(found);
+		}
+	}
+	return numbering;
+}
+
+std::set<size_t> setIntersection(const std::set<size_t>& left, const std::set<size_t>& right)
+{
+	std::set<size_t> ret;
+	std::set_intersection(left.begin(), left.end(), right.begin(), right.end(), std::inserter(ret, ret.begin()));
+	return ret;
+}
+
+std::set<size_t> setUnion(const std::set<size_t>& left, const std::set<size_t>& right)
+{
+	std::set<size_t> ret;
+	std::set_union(left.begin(), left.end(), right.begin(), right.end(), std::inserter(ret, ret.begin()));
+	return ret;
+}
+
+SparsePartition::SparsePartition(size_t k) :
+	inner(k),
+	actives(),
+	k(k)
+{
+}
+
+SparsePartition::SparsePartition(SolidPartition inner, std::set<size_t> actives) :
+	inner(inner),
+	actives(actives),
+	k(inner.getk())
+{
+}
+
+size_t SparsePartition::getAssignment(size_t loc) const
+{
+	assert(actives.size() == inner.assignments.size());
+	size_t index = 0;
+	auto iter = actives.begin();
+	while (*iter != loc)
+	{
+		assert(iter != actives.end());
+		assert(index < inner.assignments.size());
+		iter++;
+		index++;
+		assert(iter != actives.end());
+		assert(index < inner.assignments.size());
+	}
+	assert(index < inner.assignments.size());
+	return inner.assignments[index];
+}
+
+std::vector<SparsePartition> SparsePartition::getAllPartitions(std::set<size_t> actives, size_t k)
+{
+	std::vector<SolidPartition> solids = SolidPartition::getAllPartitions(0, actives.size(), k);
+	std::vector<SparsePartition> ret;
+	for (auto x : solids)
+	{
+		ret.emplace_back(x, actives);
+		assert(x.assignments.size() == actives.size());
+	}
+	return ret;
+}
+
+SparsePartition SparsePartition::merge(const SparsePartition& second) const
+{
+	assert(second.extends(*this));
+	assert(k == second.k);
+	std::set<size_t> resultActives = setUnion(actives, second.actives);
+	std::set<size_t> intersection = setIntersection(actives, second.actives);
+	std::vector<size_t> leftIntersection;
+	std::vector<size_t> rightIntersection;
+	for (auto x : intersection)
+	{
+		leftIntersection.push_back(getAssignment(x));
+		rightIntersection.push_back(second.getAssignment(x));
+	}
+	std::vector<size_t> numbering = getNumbering(leftIntersection, rightIntersection, k);
+
+	SparsePartition ret { k };
+	ret.actives = resultActives;
+	ret.inner.minRow = 0;
+	ret.inner.maxRow = resultActives.size();
+	for (auto x : resultActives)
+	{
+		if (actives.count(x) == 1)
+		{
+			ret.inner.assignments.push_back(getAssignment(x));
+		}
+		else
+		{
+			assert(second.actives.count(x) == 1);
+			assert(second.getAssignment(x) < k);
+			assert(numbering[second.getAssignment(x)] < k);
+			ret.inner.assignments.push_back(numbering[second.getAssignment(x)]);
+		}
+	}
+	assert(ret.inner.assignments.size() == resultActives.size());
+	return ret;
+}
+
+SolidPartition SparsePartition::getComparableIntersection(const std::set<size_t>& newActives) const
+{
+	std::set<size_t> realActives = setIntersection(newActives, actives);
+	SolidPartition subset = getSubset(realActives);
+	subset.unpermutate();
+	return subset;
+}
+
+SolidPartition SparsePartition::getComparableIntersection(const SparsePartition& second) const
+{
+	return getComparableIntersection(second.actives);
+}
+
+SolidPartition SparsePartition::getSolid() const
+{
+	size_t min = *actives.lower_bound(0);
+	size_t max = *actives.upper_bound(-1);
+	for (size_t i = *actives.lower_bound(0); i < *actives.upper_bound(-1); i++)
+	{
+		assert(actives.count(i) == 1);
+	}
+	SolidPartition subset = getSubset(actives);
+	subset.minRow = *actives.lower_bound(0);
+	subset.maxRow = *actives.upper_bound(-1);
+	return subset;
+}
+
+bool SparsePartition::extends(const SparsePartition& second) const
+{
+	std::set<size_t> intersection = setIntersection(actives, second.actives);
+	SolidPartition left = getSubset(intersection);
+	SolidPartition right = second.getSubset(intersection);
+	return left.extends(right);
+}
+
+double SparsePartition::deltaCost(const Column& col) const
+{
+	std::vector<std::array<double, 4>> costs;
+	std::vector<double> costSum;
+	costs.resize(k, {0, 0, 0, 0});
+	costSum.resize(k, 0);
+	for (size_t i = col.minRow; i < col.maxRow; i++)
+	{
+		if (actives.count(i) == 1)
+		{
+			assert(getAssignment(i) < k);
+			switch(col.variants[i])
+			{
+			case 'A':
+				costs[getAssignment(i)][0] += col.costs[i];
+				costSum[getAssignment(i)] += col.costs[i];
+				break;
+			case 'T':
+				costs[getAssignment(i)][1] += col.costs[i];
+				costSum[getAssignment(i)] += col.costs[i];
+				break;
+			case 'C':
+				costs[getAssignment(i)][2] += col.costs[i];
+				costSum[getAssignment(i)] += col.costs[i];
+				break;
+			case 'G':
+				costs[getAssignment(i)][3] += col.costs[i];
+				costSum[getAssignment(i)] += col.costs[i];
+				break;
+			default:
+				break;
+			}
+		}
+	}
+	size_t totalCost = 0;
+	for (size_t i = 0; i < k; i++)
+	{
+		totalCost += costSum[i]-std::max(std::max(costs[i][0], costs[i][1]), std::max(costs[i][2], costs[i][3]));
+	}
+	return totalCost;
+}
+
+size_t SparsePartition::getk() const
+{
+	return k;
+}
+
+SolidPartition SparsePartition::getSubset(const std::set<size_t>& subset) const
+{
+	assert(subset.size() > 0);
+	SolidPartition ret { k };
+	ret.minRow = 0;
+	ret.maxRow = subset.size();
+	for (auto x : subset)
+	{
+		assert(getAssignment(x) < k);
+		ret.assignments.push_back(getAssignment(x));
+	}
+	return ret;
+}
+
+
+SolidPartition::SolidPartition(size_t k) : assignments(k), minRow(0), maxRow(0), k(k) {}
 
 PartitionAssignments::PartitionAssignmentElement::PartitionAssignmentElement(PartitionAssignments& container, size_t pos)	:
 	container(container),
@@ -41,6 +277,7 @@ PartitionAssignments::PartitionAssignmentElement::operator size_t() const
 {
 	size_t bytePos = pos*container.log2k/8;
 	size_t bitPos = (pos*container.log2k)%8;
+	assert(container.data.size() > bytePos);
 	size_t ret = 0;
 	for (size_t i = 0; i < container.log2k; i++)
 	{
@@ -53,6 +290,7 @@ PartitionAssignments::PartitionAssignmentElement::operator size_t() const
 			bytePos++;
 		}
 	}
+	assert(container.data.size() > bytePos);
 	return ret;
 }
 
@@ -77,9 +315,14 @@ PartitionAssignments::PartitionAssignmentElement& PartitionAssignments::Partitio
 	assert(container.log2k > 0);
 	size_t bytePos = ((pos+1)*container.log2k-1)/8;
 	size_t bitPos = ((pos+1)*container.log2k-1)%8;
-	size_t ret = 0;
+	if (container.data.size() <= bytePos)
+	{
+		int a = 1;
+	}
+	assert(container.data.size() > bytePos);
 	for (size_t i = 0; i < container.log2k; i++)
 	{
+		assert(bytePos < container.data.size());
 		if (value & 1)
 		{
 			container.data[bytePos] |= 1<<bitPos;
@@ -89,6 +332,10 @@ PartitionAssignments::PartitionAssignmentElement& PartitionAssignments::Partitio
 			container.data[bytePos] &= (-1) ^ (1<<bitPos);
 		}
 		value >>= 1;
+		if (i == container.log2k-1)
+		{
+			break;
+		}
 		bitPos--;
 		if (bitPos > 8)
 		{
@@ -96,10 +343,15 @@ PartitionAssignments::PartitionAssignmentElement& PartitionAssignments::Partitio
 			bytePos--;
 		}
 	}
+	if (container.data.size() <= bytePos)
+	{
+		int a = 1;
+	}
+	assert(container.data.size() > bytePos);
 	return *this;
 }
 
-PartitionAssignments::PartitionAssignments() : k(0), log2k(0), actualSize(0), data()
+PartitionAssignments::PartitionAssignments(size_t k) : k(k), log2k(ceil(log2(k))), actualSize(0), data()
 {
 }
 
@@ -150,23 +402,7 @@ void PartitionAssignments::extendCapacity(size_t newCapacity, size_t defaultValu
 	assert(defaultValue == 0);
 	size_t newDataSize = (newCapacity*log2k/8+7)+1;
 	data.resize(newDataSize, defaultValue);
-}
-
-void PartitionAssignments::setk(size_t newk)
-{
-	k = newk;
-	log2k = ceil(log2(k));
-	assert(data.size() == 0);
-}
-
-void PartitionAssignments::resize(size_t newSize, size_t defaultValue)
-{
-	assert(log2k > 0);
-	assert(k > 0);
-	assert(defaultValue == 0);
-	size_t newDataSize = (newSize*log2k/8+7)+1;
-	data.resize(newDataSize, defaultValue);
-	actualSize = newSize;
+	assert(capacity() >= newCapacity);
 }
 
 size_t PartitionAssignments::size() const
@@ -191,53 +427,9 @@ PartitionAssignments::PartitionAssignmentElementConst PartitionAssignments::oper
 	return PartitionAssignmentElementConst(*this, pos);
 }
 
-
-
-//preserve numbering of overlapping haplotypes
-//eg {0, 1, 2}
-//      {0, 1, 0}
-//=>
-//   {0, 1, 2, 1}
-std::vector<size_t> getNumbering(std::vector<size_t> left, std::vector<size_t> right, size_t k)
-{
-	assert(left.size() == right.size());
-	std::vector<size_t> numbering;
-	numbering.resize(k, -1);
-	std::set<size_t> unusedNumberings;
-	for (size_t i = 0; i < k; i++)
-	{
-		unusedNumberings.insert(i);
-	}
-	for (size_t i = 0; i < left.size(); i++)
-	{
-		assert(left[i] < k);
-		assert(right[i] < k);
-		std::set<size_t>::iterator found = unusedNumberings.find(left[i]);
-		if (found != unusedNumberings.end())
-		{
-			unusedNumberings.erase(found);
-		}
-		else
-		{
-			assert(numbering[right[i]] == left[i]);
-		}
-		numbering[right[i]] = left[i];
-	}
-	for (size_t i = 0; i < k; i++)
-	{
-		if (numbering[i] == -1)
-		{
-			std::set<size_t>::iterator found = unusedNumberings.lower_bound(0);
-			assert(found != unusedNumberings.end());
-			numbering[i] = *found;
-			unusedNumberings.erase(found);
-		}
-	}
-	return numbering;
-}
-
 void verifyNumbering(std::vector<size_t> numbering, size_t k)
 {
+	assert(numbering.size() == k);
 	std::vector<bool> used;
 	used.resize(k, false);
 	for (auto x : numbering)
@@ -248,129 +440,67 @@ void verifyNumbering(std::vector<size_t> numbering, size_t k)
 	}
 }
 
-class PartitionContainer
+class SparsePartitionContainer
 {
 public:
-	PartitionContainer(size_t k) : k(k) {};
-	size_t insertPartition(Partition partition);
-	size_t extendPartition(size_t partitionNum, Partition extension);
-	Partition getPartition(size_t partitionNum);
+	SparsePartitionContainer();
+	size_t insertPartition(SparsePartition partition);
+	size_t extendPartition(size_t partitionNum, SparsePartition extension);
+	SparsePartition getPartition(size_t partitionNum) const;
 	void clearUnused(std::vector<size_t> used);
 private:
-	size_t k;
-	//haplotype, row number, previous index (rownumber-1's index)
-	std::vector<std::tuple<size_t, size_t, size_t>> partitionsLinkedList;
 	std::vector<size_t> unusedIndices;
+	std::vector<SparsePartition> partitions;
 };
 
-size_t PartitionContainer::insertPartition(Partition partition)
+SparsePartitionContainer::SparsePartitionContainer()
 {
-	size_t lastIndex = partitionsLinkedList.size();
-	partitionsLinkedList.emplace_back(partition.assignments[0], partition.minRow, -1);
-	for (size_t i = 1; i < partition.assignments.size(); i++)
-	{
-		partitionsLinkedList.emplace_back(partition.assignments[i], partition.minRow+i, lastIndex+i-1);
-	}
-	return partitionsLinkedList.size()-1;
 }
 
-size_t PartitionContainer::extendPartition(size_t partitionNum, Partition extension)
+size_t SparsePartitionContainer::insertPartition(SparsePartition partition)
 {
-	assert(std::get<1>(partitionsLinkedList[partitionNum]) >= extension.minRow);
-	assert(std::get<1>(partitionsLinkedList[partitionNum]) <= extension.maxRow);
-
-	//find numbering
-	std::vector<size_t> left;
-	size_t pos = partitionNum;
-	while (std::get<1>(partitionsLinkedList[pos]) >= extension.minRow)
+	if (unusedIndices.size() > 0)
 	{
-		left.push_back(std::get<0>(partitionsLinkedList[pos]));
-		if (std::get<2>(partitionsLinkedList[pos]) == -1)
-		{
-			break;
-		}
-		size_t oldRowNum = std::get<1>(partitionsLinkedList[pos]);
-		pos = std::get<2>(partitionsLinkedList[pos]);
-		size_t newRowNum = std::get<1>(partitionsLinkedList[pos]);
-		assert(newRowNum == oldRowNum-1);
-		assert(oldRowNum > 0);
+		size_t result = unusedIndices.back();
+		assert(result < partitions.size());
+		partitions[result] = partition;
+		unusedIndices.pop_back();
+		return result;
 	}
-	std::reverse(left.begin(), left.end());
-	assert(std::get<1>(partitionsLinkedList[partitionNum])+1 >= left.size());
-	assert(std::get<1>(partitionsLinkedList[partitionNum]) >= extension.minRow);
-	assert(std::get<1>(partitionsLinkedList[partitionNum])-left.size()+1 >= extension.minRow);
-	std::vector<size_t> right { extension.assignments.begin()+(std::get<1>(partitionsLinkedList[partitionNum])+1-left.size()-extension.minRow), extension.assignments.begin()+(std::get<1>(partitionsLinkedList[partitionNum])-extension.minRow+1) };
-	assert(left.size() == right.size());
-	std::vector<size_t> numbering = getNumbering(left, right, k);
-
-	Partition leftPartition{left.begin(), left.end(), k};
-	Partition rightPartition{right.begin(), right.end(), k};
-	assert(leftPartition.extends(rightPartition));
-	verifyNumbering(numbering, k);
-
-	//insert part after overlap
-	pos = partitionNum;
-	size_t extensionIndex = std::get<1>(partitionsLinkedList[partitionNum])-extension.minRow+1;
-	while (extensionIndex < extension.assignments.size())
-	{
-		if (unusedIndices.size() > 0)
-		{
-			size_t insertPos = unusedIndices.back();
-			unusedIndices.pop_back();
-			std::get<0>(partitionsLinkedList[insertPos]) = numbering[extension.assignments[extensionIndex]];
-			std::get<1>(partitionsLinkedList[insertPos]) = extension.minRow+extensionIndex;
-			std::get<2>(partitionsLinkedList[insertPos]) = pos;
-			pos = insertPos;
-		}
-		else
-		{
-			partitionsLinkedList.emplace_back(numbering[extension.assignments[extensionIndex]], extension.minRow+extensionIndex, pos);
-			pos = partitionsLinkedList.size()-1;
-		}
-		extensionIndex++;
-	}
-	return pos;
+	partitions.push_back(partition);
+	return partitions.size()-1;
 }
 
-Partition PartitionContainer::getPartition(size_t partitionNum)
+size_t SparsePartitionContainer::extendPartition(size_t partitionNum, SparsePartition partition)
 {
-	Partition ret;
-	ret.maxRow = std::get<1>(partitionsLinkedList[partitionNum]);
-	ret.minRow = ret.maxRow;
-	ret.setk(k);
-	while (std::get<2>(partitionsLinkedList[partitionNum]) != -1)
-	{
-		ret.assignments.push_back(std::get<0>(partitionsLinkedList[partitionNum]));
-		size_t oldMinRow = ret.minRow;
-		partitionNum = std::get<2>(partitionsLinkedList[partitionNum]);
-		ret.minRow = std::get<1>(partitionsLinkedList[partitionNum]);
-		size_t newMinRow = ret.minRow;
-		assert(newMinRow == oldMinRow-1);
-	}
-	ret.assignments.push_back(std::get<0>(partitionsLinkedList[partitionNum]));
-	ret.minRow = std::get<1>(partitionsLinkedList[partitionNum]);
-	std::reverse(ret.assignments.begin(), ret.assignments.end());
-	return ret;
+	assert(partitionNum < partitions.size());
+	assert(partition.extends(getPartition(partitionNum)));
+	SparsePartition old = getPartition(partitionNum);
+	SparsePartition insert = old.merge(partition);
+	assert(insert.extends(partition));
+	assert(insert.extends(getPartition(partitionNum)));
+	return insertPartition(insert);
 }
 
-void PartitionContainer::clearUnused(std::vector<size_t> used)
+SparsePartition SparsePartitionContainer::getPartition(size_t partitionNum) const
+{
+	assert(partitionNum < partitions.size());
+	return partitions[partitionNum];
+}
+
+void SparsePartitionContainer::clearUnused(std::vector<size_t> used)
 {
 	std::vector<bool> isUsed;
-	isUsed.resize(partitionsLinkedList.size(), false);
-	for (auto x : used)
-	{
-		while (std::get<2>(partitionsLinkedList[x]) != -1)
-		{
-			isUsed[x] = true;
-			x = std::get<2>(partitionsLinkedList[x]);
-		}
-		isUsed[x] = true;
-	}
+	isUsed.resize(partitions.size(), false);
 	for (auto x : unusedIndices)
 	{
 		isUsed[x] = true;
 	}
-	for (size_t i = 0; i < partitionsLinkedList.size(); i++)
+	for (auto x : used)
+	{
+		isUsed[x] = true;
+	}
+	for (size_t i = 0; i < isUsed.size(); i++)
 	{
 		if (!isUsed[i])
 		{
@@ -379,29 +509,31 @@ void PartitionContainer::clearUnused(std::vector<size_t> used)
 	}
 }
 
-size_t Partition::getk() const
+size_t SolidPartition::getValue(size_t index) const
+{
+	assert(index < assignments.size());
+	return assignments[index];
+}
+
+size_t SolidPartition::getk() const
 {
 	return k;
 }
 
-void Partition::setk(size_t newK)
-{
-	k = newK;
-	assignments.setk(k);
-}
 //must not return permutations, otherwise will produce about k! times more partitions than necessary
 //[start, end)
-std::vector<Partition> Partition::getAllPartitions(size_t start, size_t end, size_t k)
+std::vector<SolidPartition> SolidPartition::getAllPartitions(size_t start, size_t end, size_t k)
 {
-	std::vector<Partition> ret;
+	assert(end > start);
+	std::vector<SolidPartition> ret;
 	std::vector<size_t> newPartition;
-	newPartition.resize(end-start, 0);
+	newPartition.resize(end-start+5, 0);
 	std::vector<size_t> rowsOccupied;
-	rowsOccupied.resize(k+1, 0);
+	rowsOccupied.resize(k+5, 0);
 	rowsOccupied[0] = end-start;
 	if (end == start+1)
 	{
-		ret.emplace_back(newPartition.begin(), newPartition.end(), k);
+		ret.emplace_back(newPartition.begin(), newPartition.begin()+(end-start), k);
 		ret.back().minRow = start;
 		ret.back().maxRow = end;
 		return ret;
@@ -410,38 +542,51 @@ std::vector<Partition> Partition::getAllPartitions(size_t start, size_t end, siz
 	bool repeat = true;
 	while (repeat)
 	{
-		ret.emplace_back(newPartition.begin(), newPartition.end(), k);
+		ret.emplace_back(newPartition.begin(), newPartition.begin()+(end-start), k);
 		ret.back().minRow = start;
 		ret.back().maxRow = end;
+		assert(loc < end-start);
+		assert(newPartition[loc] < k);
 		assert(rowsOccupied[newPartition[loc]] > 0);
 		assert(rowsOccupied[newPartition[loc]] <= end-start);
 		rowsOccupied[newPartition[loc]]--;
 		newPartition[loc]++;
 		rowsOccupied[newPartition[loc]]++;
+		assert(loc < end-start);
+		assert(newPartition[loc] <= k);
 		assert(rowsOccupied[newPartition[loc]] > 0);
 		assert(rowsOccupied[newPartition[loc]] <= end-start);
 		if (rowsOccupied[newPartition[loc]-1] == 0 || newPartition[loc] == k)
 		{
 			while (rowsOccupied[newPartition[loc]-1] == 0 || newPartition[loc] == k)
 			{
+				assert(loc < end-start);
+				assert(newPartition[loc] <= k);
 				assert(rowsOccupied[newPartition[loc]] > 0);
 				assert(rowsOccupied[newPartition[loc]] <= end-start);
 				rowsOccupied[newPartition[loc]]--;
 				newPartition[loc] = 0;
 				rowsOccupied[newPartition[loc]]++;
+				assert(loc < end-start);
+				assert(newPartition[loc] <= k);
 				assert(rowsOccupied[newPartition[loc]] > 0);
 				assert(rowsOccupied[newPartition[loc]] <= end-start);
+				assert(loc < end-start);
 				loc--;
 				if (loc == 0)
 				{
 					repeat = false;
 					break;
 				}
+				assert(loc < end-start);
+				assert(newPartition[loc] <= k);
 				assert(rowsOccupied[newPartition[loc]] > 0);
 				assert(rowsOccupied[newPartition[loc]] <= end-start);
 				rowsOccupied[newPartition[loc]]--;
 				newPartition[loc]++;
 				rowsOccupied[newPartition[loc]]++;
+				assert(loc < end-start);
+				assert(newPartition[loc] <= k);
 				assert(rowsOccupied[newPartition[loc]] > 0);
 				assert(rowsOccupied[newPartition[loc]] <= end-start);
 			}
@@ -451,76 +596,7 @@ std::vector<Partition> Partition::getAllPartitions(size_t start, size_t end, siz
 	return ret;
 }
 
-Partition Partition::merge(Partition second) const
-{
-	Partition ret { *this };
-/*	if (maxRow < second.minRow)
-	{
-		for (size_t i = maxRow; i < second.minRow; i++)
-		{
-			ret.assignments.push_back(0);
-		}
-		ret.maxRow = second.minRow;
-	}*/
-	assert(maxRow >= second.minRow);
-	assert(minRow <= second.minRow);
-
-	size_t intersectionStart = std::max(minRow, second.minRow);
-	size_t intersectionEnd = std::min(maxRow, second.maxRow);
-	std::vector<size_t> leftPart { assignments.begin()+(intersectionStart-minRow), assignments.begin()+(intersectionEnd-minRow) };
-	std::vector<size_t> rightPart { second.assignments.begin()+(intersectionStart-second.minRow), second.assignments.begin()+(intersectionEnd-second.minRow) };
-	std::vector<size_t> numbering = getNumbering(leftPart, rightPart, k);
-	
-	verifyNumbering(numbering, k);
-
-	for (size_t i = ret.maxRow; i < second.maxRow; i++)
-	{
-		ret.assignments.push_back(numbering[second.assignments[i-second.minRow]]);
-	}
-	ret.maxRow = second.maxRow;
-
-	return ret;
-}
-
-double Partition::deltaCost(const Column& col) const
-{
-	std::vector<std::array<size_t, 4>> costs;
-	std::vector<size_t> costSum;
-	costs.resize(k, {0, 0, 0, 0});
-	costSum.resize(k, 0);
-	for (size_t i = col.minRow; i < col.maxRow; i++)
-	{
-		switch(col.variants[i])
-		{
-		case 'A':
-			costs[assignments[i-minRow]][0] += col.costs[i];
-			costSum[assignments[i-minRow]] += col.costs[i];
-			break;
-		case 'T':
-			costs[assignments[i-minRow]][1] += col.costs[i];
-			costSum[assignments[i-minRow]] += col.costs[i];
-			break;
-		case 'C':
-			costs[assignments[i-minRow]][2] += col.costs[i];
-			costSum[assignments[i-minRow]] += col.costs[i];
-			break;
-		case 'G':
-			costs[assignments[i-minRow]][3] += col.costs[i];
-			costSum[assignments[i-minRow]] += col.costs[i];
-			break;
-		default:
-			break;
-		}
-	}
-	size_t totalCost = 0;
-	for (size_t i = 0; i < k; i++)
-	{
-		totalCost += costSum[i]-std::max(std::max(costs[i][0], costs[i][1]), std::max(costs[i][2], costs[i][3]));
-	}
-	return totalCost;
-}
-
-bool Partition::extends(Partition second) const
+bool SolidPartition::extends(const SolidPartition& second) const
 {
 	size_t intersectionStart = std::max(minRow, second.minRow);
 	size_t intersectionEnd = std::min(maxRow, second.maxRow);
@@ -528,10 +604,16 @@ bool Partition::extends(Partition second) const
 	{
 		return true;
 	}
-	std::valarray<size_t> mapping(-1, k);
-	std::valarray<size_t> reverseMapping(-1, k);
+	std::vector<size_t> mapping;
+	mapping.resize(k, -1);
+	std::vector<size_t> reverseMapping;
+	reverseMapping.resize(k, -1);
 	for (size_t i = intersectionStart; i < intersectionEnd; i++)
 	{
+		assert(i-minRow < assignments.size());
+		assert(i-second.minRow < second.assignments.size());
+		assert(assignments[i-minRow] < k);
+		assert(second.assignments[i-second.minRow] < k);
 		if (mapping[assignments[i-minRow]] == -1)
 		{
 			mapping[assignments[i-minRow]] = second.assignments[i-second.minRow];
@@ -553,7 +635,7 @@ bool Partition::extends(Partition second) const
 }
 
 //basically <
-bool partitionCompare(const Partition& left, const Partition& right)
+bool partitionCompare(const SolidPartition& left, const SolidPartition& right)
 {
 	int compare = memcmp((const char*)left.assignments.data.data(), (const char*)right.assignments.data.data(), left.assignments.actualSize*left.assignments.log2k/8);
 	if (compare < 0)
@@ -579,13 +661,12 @@ bool partitionCompare(const Partition& left, const Partition& right)
 }
 
 //first index is new partition index, second index (inner vector) is old partition indices
-std::vector<std::vector<size_t>> findExtensions(const std::vector<Partition>& lastRow, const std::vector<Partition>& newRow)
+std::vector<std::vector<size_t>> findExtensions(const std::vector<SparsePartition>& lastRow, const std::vector<SparsePartition>& newRow)
 {
 	std::vector<std::vector<size_t>> ret;
 	ret.resize(newRow.size());
-	size_t intersectionStart = std::max(lastRow[0].minRow, newRow[0].minRow);
-	size_t intersectionEnd = std::min(lastRow[0].maxRow, newRow[0].maxRow);
-	if (intersectionEnd <= intersectionStart)
+	std::set<size_t> intersect = setIntersection(lastRow[0].actives, newRow[0].actives);
+	if (intersect.size() == 0)
 	{
 		for (size_t i = 0; i < newRow.size(); i++)
 		{
@@ -596,42 +677,22 @@ std::vector<std::vector<size_t>> findExtensions(const std::vector<Partition>& la
 		}
 		return ret;
 	}
-	std::vector<std::pair<size_t, Partition>> newLastRow;
-	std::vector<std::pair<size_t, Partition>> newNewRow;
-	if (intersectionStart != lastRow[0].minRow || intersectionEnd != lastRow[0].maxRow)
+	std::vector<std::pair<size_t, SolidPartition>> newLastRow;
+	std::vector<std::pair<size_t, SolidPartition>> newNewRow;
+	for (size_t i = 0; i < lastRow.size(); i++)
 	{
-		for (size_t i = 0; i < lastRow.size(); i++)
-		{
-			Partition insertion = lastRow[i].filter(intersectionStart, intersectionEnd);
-			insertion.unpermutate();
-			newLastRow.emplace_back(i, insertion);
-		}
+		SolidPartition insertion = lastRow[i].getComparableIntersection(intersect);
+		insertion.unpermutate();
+		newLastRow.emplace_back(i, insertion);
 	}
-	else
+	for (size_t i = 0; i < newRow.size(); i++)
 	{
-		for (size_t i = 0; i < lastRow.size(); i++)
-		{
-			newLastRow.emplace_back(i, lastRow[i]);
-		}
+		SolidPartition insertion = newRow[i].getComparableIntersection(intersect);
+		insertion.unpermutate();
+		newNewRow.emplace_back(i, insertion);
 	}
-	if (intersectionStart != newRow[0].minRow || intersectionEnd != newRow[0].maxRow)
-	{
-		for (size_t i = 0; i < newRow.size(); i++)
-		{
-			Partition insertion = newRow[i].filter(intersectionStart, intersectionEnd);
-			insertion.unpermutate();
-			newNewRow.emplace_back(i, insertion);
-		}
-	}
-	else
-	{
-		for (size_t i = 0; i < newRow.size(); i++)
-		{
-			newNewRow.emplace_back(i, newRow[i]);
-		}
-	}
-	std::sort(newLastRow.begin(), newLastRow.end(), [](const std::pair<size_t, Partition>& left, const std::pair<size_t, Partition>& right) { return partitionCompare(left.second, right.second); });
-	std::sort(newNewRow.begin(), newNewRow.end(), [](const std::pair<size_t, Partition>& left, const std::pair<size_t, Partition>& right) { return partitionCompare(left.second, right.second); });
+	std::sort(newLastRow.begin(), newLastRow.end(), [](const std::pair<size_t, SolidPartition>& left, const std::pair<size_t, SolidPartition>& right) { return partitionCompare(left.second, right.second); });
+	std::sort(newNewRow.begin(), newNewRow.end(), [](const std::pair<size_t, SolidPartition>& left, const std::pair<size_t, SolidPartition>& right) { return partitionCompare(left.second, right.second); });
 
 	size_t lastIndex = 0;
 	size_t newIndex = 0;
@@ -661,6 +722,11 @@ std::vector<std::vector<size_t>> findExtensions(const std::vector<Partition>& la
 			{
 				for (size_t j = lastIndex; j < lastIndexEnd; j++)
 				{
+					assert(newRow[newNewRow[i].first].extends(lastRow[newLastRow[j].first]));
+					assert(i < newNewRow.size());
+					assert(j < newLastRow.size());
+					assert(newNewRow[i].first < newRow.size());
+					assert(newLastRow[j].first < lastRow.size());
 					ret[newNewRow[i].first].push_back(newLastRow[j].first);
 				}
 			}
@@ -671,7 +737,7 @@ std::vector<std::vector<size_t>> findExtensions(const std::vector<Partition>& la
 	return ret;
 }
 
-bool verifyExtensions(const std::vector<Partition>& lastRow, const std::vector<Partition>& newRow, const std::vector<std::vector<size_t>>& extensions)
+bool verifyExtensions(const std::vector<SolidPartition>& lastRow, const std::vector<SolidPartition>& newRow, const std::vector<std::vector<size_t>>& extensions)
 {
 	for (size_t i = 0; i < extensions.size(); i++)
 	{
@@ -686,17 +752,47 @@ bool verifyExtensions(const std::vector<Partition>& lastRow, const std::vector<P
 	return true;
 }
 
-Partition Partition::filter(size_t newMinRow, size_t newMaxRow) const
+bool verifyExtensions(const std::vector<SparsePartition>& lastRow, const std::vector<SparsePartition>& newRow, const std::vector<std::vector<size_t>>& extensions)
 {
-	newMinRow = std::max(newMinRow, minRow);
-	newMaxRow = std::min(newMaxRow, maxRow);
-	Partition ret {assignments.begin()+(newMinRow-minRow), assignments.end()-(maxRow-newMaxRow), k};
-	ret.minRow = newMinRow;
-	ret.maxRow = newMaxRow;
-	return ret;
+	for (size_t i = 0; i < extensions.size(); i++)
+	{
+		for (auto y : extensions[i])
+		{
+			if (!newRow[i].extends(lastRow[y]))
+			{
+				return false;
+			}
+		}
+	}
+	return true;
 }
 
-void Partition::unpermutate()
+bool verifyExtensions2(const std::vector<SparsePartition>& lastRow, const std::vector<SparsePartition>& newRow, const std::vector<std::vector<size_t>>& extensions)
+{
+	for (size_t i = 0; i < newRow.size(); i++)
+	{
+		for (size_t j = 0; j < lastRow.size(); j++)
+		{
+			if (find(extensions[i].begin(), extensions[i].end(), j) == extensions[i].end())
+			{
+				if (newRow[i].extends(lastRow[j]))
+				{
+					return false;
+				}
+			}
+			else
+			{
+				if (!newRow[i].extends(lastRow[j]))
+				{
+					return false;
+				}
+			}
+		}
+	}
+	return true;
+}
+
+void SolidPartition::unpermutate()
 {
 	std::vector<size_t> mapping;
 	mapping.resize(k, -1);
@@ -714,13 +810,12 @@ void Partition::unpermutate()
 }
 
 template <typename Iterator>
-Partition::Partition(Iterator start, Iterator end, size_t k) :
-	assignments(),
+SolidPartition::SolidPartition(Iterator start, Iterator end, size_t k) :
+	assignments(k),
 	minRow(),
 	maxRow(),
 	k(k)
 {
-	assignments.setk(k);
 	size_t pos = 0;
 	while (start != end)
 	{
@@ -730,69 +825,115 @@ Partition::Partition(Iterator start, Iterator end, size_t k) :
 	}
 }
 
-std::vector<std::pair<size_t, size_t>> getActiveRows(std::vector<SNPSupport> supports)
+std::vector<std::set<size_t>> getActiveRows(std::vector<SNPSupport> supports)
 {
-	std::vector<std::pair<size_t, size_t>> ret;
-	std::vector<bool> hasValue;
+	size_t maxSNP = 0;
+	size_t maxRead = 0;
 	for (auto x : supports)
 	{
-		if (ret.size() <= x.SNPnum)
-		{
-			ret.resize(x.SNPnum+1);
-			hasValue.resize(x.SNPnum+1, false);
-		}
-		if (!hasValue[x.SNPnum])
-		{
-			ret[x.SNPnum].first = x.readNum;
-			ret[x.SNPnum].second = x.readNum;
-			hasValue[x.SNPnum] = true;
-		}
-		ret[x.SNPnum].first = std::min(ret[x.SNPnum].first, x.readNum);
-		ret[x.SNPnum].second = std::max(ret[x.SNPnum].second, x.readNum);
+		maxSNP = std::max(maxSNP, x.SNPnum);
+		maxRead = std::max(maxRead, x.readNum);
 	}
-	for (size_t i = 0; i < ret.size(); i++)
+	maxSNP++;
+	maxRead++;
+
+	std::vector<std::pair<size_t, size_t>> rowExtent;
+	rowExtent.resize(maxRead, std::pair<size_t, size_t>{-1, 0});
+	for (auto x : supports)
 	{
-		if (!hasValue[i])
+		rowExtent[x.readNum].first = std::min(x.SNPnum, rowExtent[x.readNum].first);
+		rowExtent[x.readNum].second = std::max(x.SNPnum, rowExtent[x.readNum].second);
+	}
+
+	std::vector<std::set<size_t>> ret;
+	ret.resize(maxSNP);
+	for (size_t i = 0; i < maxSNP; i++)
+	{
+		for (size_t a = 0; a < maxRead; a++)
 		{
-			ret[i].first = -1;
-			ret[i].second = 0;
+			if (rowExtent[a].first <= i && rowExtent[a].second >= i)
+			{
+				ret[i].insert(a);
+			}
 		}
 	}
-	for (size_t i = 1; i < ret.size(); i++)
+	return ret;
+}
+
+bool verifyContainer(const std::vector<SparsePartition>& partitions, const SparsePartitionContainer& container, const std::vector<size_t>& mapping)
+{
+	if (partitions.size() != mapping.size())
 	{
-		ret[i].second = std::max(ret[i].second, ret[i-1].second);
+		return false;
 	}
-	for (size_t i = ret.size()-2; i > 0; i--)
+	for (size_t i = 0; i < mapping.size(); i++)
 	{
-		ret[i].first = std::min(ret[i].first, ret[i+1].first);
+		if (!partitions[i].extends(container.getPartition(mapping[i])))
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+std::vector<size_t> findOptimalExtensions(const std::vector<std::vector<size_t>>& extensions, const std::vector<double>& oldCosts)
+{
+	std::vector<size_t> ret;
+	for (size_t i = 0; i < extensions.size(); i++)
+	{
+		assert(extensions[i].size() > 0);
+		double minCost = oldCosts[extensions[i][0]];
+		size_t index = extensions[i][0];
+		for (size_t j = 1; j < extensions[i].size(); j++)
+		{
+			if (oldCosts[extensions[i][j]] < minCost)
+			{
+				minCost = oldCosts[extensions[i][j]];
+				index = extensions[i][j];
+			}
+		}
+		ret.push_back(index);
 	}
 	return ret;
 }
 
 //returns optimal partition and its score
-std::pair<Partition, double> haplotype(std::vector<SNPSupport> supports, size_t k)
+std::pair<SolidPartition, double> haplotype(std::vector<SNPSupport> supports, size_t k)
 {
-	std::cerr << "sort\n";
-	std::sort(supports.begin(), supports.end(), [](SNPSupport left, SNPSupport right) { return left.SNPnum < right.SNPnum; });
-
-	std::cerr << "active columns\n";
-	std::vector<std::pair<size_t, size_t>> activeRowsPerColumn = getActiveRows(supports);
-
-	std::cerr << "column " << supports[0].SNPnum << " (" << activeRowsPerColumn[supports[0].SNPnum].first << "-" << activeRowsPerColumn[supports[0].SNPnum].second << ")\n";
-	//handle first column separately
-	size_t firstSNPEnd = 0;
-	for (size_t i = 1; i < supports.size(); i++)
+	std::cerr << "extents\n";
+	size_t maxSNP = 0;
+	size_t maxRead = 0;
+	for (auto x : supports)
 	{
-		if (supports[i].SNPnum != supports[i-1].SNPnum)
-		{
-			firstSNPEnd = i;
-			break;
-		}
+		maxSNP = std::max(maxSNP, x.SNPnum);
+		maxRead = std::max(maxRead, x.readNum);
 	}
-	PartitionContainer optimalPartitions { k };
-	//Column oldColumn { supports.begin(), supports.end(), supports[0].SNPnum };
-	Column oldColumn { supports.begin(), supports.begin()+firstSNPEnd, supports[0].SNPnum, activeRowsPerColumn[supports[0].SNPnum].first, activeRowsPerColumn[supports[0].SNPnum].second+1 };
-	std::vector<Partition> oldRowPartitions = Partition::getAllPartitions(activeRowsPerColumn[supports[0].SNPnum].first, activeRowsPerColumn[supports[0].SNPnum].second+1, k);
+	maxSNP++;
+	maxRead++;
+
+	std::cerr << "split supports per SNP\n";
+	std::vector<std::vector<SNPSupport>> supportsPerSNP;
+	supportsPerSNP.resize(maxSNP);
+	for (auto x : supports)
+	{
+		supportsPerSNP[x.SNPnum].push_back(x);
+	}
+	size_t firstSNP = 0;
+	while (supportsPerSNP[firstSNP].size() == 0)
+	{
+		firstSNP++;
+		assert(firstSNP < supportsPerSNP.size());
+	}
+
+	std::cerr << "active rows\n";
+	std::vector<std::set<size_t>> activeRowsPerColumn = getActiveRows(supports);
+	SparsePartitionContainer optimalPartitions;
+
+	std::cerr << "column " << firstSNP << " (" << activeRowsPerColumn[firstSNP].size() << ")";
+	auto lastColumnTime = std::chrono::system_clock::now();
+	Column oldColumn { supportsPerSNP[firstSNP].begin(), supportsPerSNP[firstSNP].end(), firstSNP, 0, maxRead };
+
+	std::vector<SparsePartition> oldRowPartitions = SparsePartition::getAllPartitions(activeRowsPerColumn[firstSNP], k);
 	std::vector<double> oldRowCosts;
 	std::vector<size_t> oldOptimalPartitions;
 	for (size_t i = 0; i < oldRowPartitions.size(); i++)
@@ -804,60 +945,30 @@ std::pair<Partition, double> haplotype(std::vector<SNPSupport> supports, size_t 
 		oldRowCosts.push_back(x.deltaCost(oldColumn));
 	}
 
-	std::cerr << "start real columns\n";
-	//each column, including last one
-	size_t thisSNPStart = firstSNPEnd;
-	auto lastColumnTime = std::chrono::system_clock::now();
-	for (size_t i = firstSNPEnd+1; i <= supports.size(); i++)
+	for (size_t snp = firstSNP+1; snp < maxSNP; snp++)
 	{
-		if (i == supports.size() || supports[i].SNPnum != supports[i-1].SNPnum)
+		auto newColumnTime = std::chrono::system_clock::now();
+		auto diff = std::chrono::duration_cast<std::chrono::duration<int,std::milli>>(newColumnTime-lastColumnTime);
+		lastColumnTime = newColumnTime;
+		std::cerr << " " << diff.count() << "ms\n";
+		std::cerr << "column " << snp << " (" << activeRowsPerColumn[snp].size() << ", " << setIntersection(activeRowsPerColumn[snp-1], activeRowsPerColumn[snp]).size() << ")";
+		std::vector<SparsePartition> newRowPartitions = SparsePartition::getAllPartitions(activeRowsPerColumn[snp], k);
+		std::vector<double> newRowCosts;
+		std::vector<size_t> newOptimalPartitions;
+		std::vector<std::vector<size_t>> extensions = findExtensions(oldRowPartitions, newRowPartitions);
+		Column col { supportsPerSNP[snp].begin(), supportsPerSNP[snp].end(), snp, 0, maxRead };
+		std::vector<size_t> optimalExtensions = findOptimalExtensions(extensions, oldRowCosts);
+		for (size_t j = 0; j < optimalExtensions.size(); j++)
 		{
-			auto newColumnTime = std::chrono::system_clock::now();
-			auto diff = std::chrono::duration_cast<std::chrono::duration<int,std::milli>>(newColumnTime-lastColumnTime);
-			lastColumnTime = newColumnTime;
-			std::cerr << " " << diff.count() << "ms\n";
-			std::cerr << "column " << supports[i-1].SNPnum << " (" << activeRowsPerColumn[supports[thisSNPStart].SNPnum].first << "-" << activeRowsPerColumn[supports[thisSNPStart].SNPnum].second << ")";
-			//Column col { supports.begin(), supports.end(), supports[thisSNPStart].SNPnum };
-			Column col { supports.begin()+thisSNPStart, supports.begin()+i, supports[thisSNPStart].SNPnum, activeRowsPerColumn[supports[thisSNPStart].SNPnum].first, activeRowsPerColumn[supports[thisSNPStart].SNPnum].second+1 };
-			std::vector<Partition> newRowPartitions = Partition::getAllPartitions(activeRowsPerColumn[supports[thisSNPStart].SNPnum].first, activeRowsPerColumn[supports[thisSNPStart].SNPnum].second+1, k);
-			std::vector<double> newRowCosts;
-			std::vector<size_t> newOptimalPartitions;
-			std::vector<std::vector<size_t>> extensions = findExtensions(oldRowPartitions, newRowPartitions);
-
-			assert(verifyExtensions(oldRowPartitions, newRowPartitions, extensions));
-
-			for (size_t i = 0; i < extensions.size(); i++)
-			{
-				double cost = 0;
-				bool hasCost = false;
-				size_t optimalExtensionIndex = 0;
-				for (size_t a = 0; a < extensions[i].size(); a++)
-				{
-						if (!hasCost)
-						{
-							cost = oldRowCosts[extensions[i][a]];
-							hasCost = true;
-							optimalExtensionIndex = extensions[i][a];
-						}
-						if (oldRowCosts[extensions[i][a]] < cost)
-						{
-							optimalExtensionIndex = extensions[i][a];
-						}
-						cost = std::min(cost, oldRowCosts[extensions[i][a]]);
-				}
-				assert(hasCost);
-				newRowCosts.push_back(cost+newRowPartitions[i].deltaCost(col));
-				newOptimalPartitions.push_back(optimalPartitions.extendPartition(oldOptimalPartitions[optimalExtensionIndex], newRowPartitions[i]));
-			}
-			oldRowPartitions = newRowPartitions;
-			oldRowCosts = newRowCosts;
-			oldOptimalPartitions = newOptimalPartitions;
-			if (i == supports.size())
-			{
-				break;
-			}
-			thisSNPStart = i;
+			assert(optimalExtensions[j] < oldOptimalPartitions.size());
+			assert(optimalExtensions[j] < oldRowCosts.size());
+			newRowCosts.push_back(oldRowCosts[optimalExtensions[j]]+newRowPartitions[j].deltaCost(col));
+			newOptimalPartitions.push_back(optimalPartitions.extendPartition(oldOptimalPartitions[optimalExtensions[j]], newRowPartitions[j]));
 		}
+		oldRowPartitions = newRowPartitions;
+		oldRowCosts = newRowCosts;
+		oldOptimalPartitions = newOptimalPartitions;
+		optimalPartitions.clearUnused(newOptimalPartitions);
 	}
 
 	size_t optimalResultIndex = 0;
@@ -868,5 +979,5 @@ std::pair<Partition, double> haplotype(std::vector<SNPSupport> supports, size_t 
 			optimalResultIndex = i;
 		}
 	}
-	return std::pair<Partition, double>{optimalPartitions.getPartition(oldOptimalPartitions[optimalResultIndex]), oldRowCosts[optimalResultIndex]};
+	return std::pair<SolidPartition, double>{optimalPartitions.getPartition(oldOptimalPartitions[optimalResultIndex]).getSolid(), oldRowCosts[optimalResultIndex]};
 }
