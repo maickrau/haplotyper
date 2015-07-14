@@ -172,31 +172,32 @@ public:
 	size_t minRow;
 	size_t maxRow;
 private:
-	size_t k;
+//	size_t k;
 };
 
 class SparsePartition
 {
 public:
-	SparsePartition(size_t k, size_t numSNPs);
-	SparsePartition(SolidPartition inner, std::set<size_t> actives, size_t numSNPs);
-	static std::vector<SparsePartition> getAllPartitions(std::set<size_t> actives, size_t k, size_t numSNPs);
-	SparsePartition merge(const SparsePartition& second) const;
-	SolidPartition getComparableIntersection(const SparsePartition& second) const;
-	SolidPartition getComparableIntersection(const std::set<size_t>& newActives) const;
-	SolidPartition getSolid() const;
-	bool extends(const SparsePartition& second) const;
-	double deltaCost(const Column& col) const;
+	SparsePartition(size_t k);
+	SparsePartition(SolidPartition inner);
+	static std::vector<SparsePartition> getAllPartitions(std::set<size_t> actives, size_t k);
+	SparsePartition merge(const SparsePartition& second, const std::set<size_t>& actives, const std::set<size_t>& secondActives) const;
+	SolidPartition getComparableIntersection(const SparsePartition& second, const std::set<size_t>& actives, const std::set<size_t>& secondActives) const;
+	SolidPartition getComparableIntersection(const std::set<size_t>& newActives, const std::set<size_t>& actives) const;
+	SolidPartition getSolid(const std::set<size_t>& actives) const;
+	SolidPartition getSolidFromIndices(const std::set<size_t>& pickThese) const;
+	bool extends(const SparsePartition& second, const std::set<size_t>& actives, const std::set<size_t>& secondActives) const;
+	double deltaCost(const Column& col, const std::set<size_t>& actives) const;
 	size_t getk() const;
-	size_t getAssignment(size_t loc) const;
-	std::set<size_t> getActives() const;
-	void setActives(const std::set<size_t>& actives);
+	size_t getAssignment(size_t loc, const std::set<size_t>& actives) const;
+//	std::set<size_t> getActives() const;
+//	void setActives(const std::set<size_t>& actives);
 
 	SolidPartition inner;
 private:
-	SolidPartition getSubset(const std::set<size_t>& subset) const;
-	PartitionAssignments compressedActives;
-	size_t k;
+	SolidPartition getSubset(const std::set<size_t>& subset, const std::set<size_t>& actives) const;
+//	PartitionAssignments compressedActives;
+//	size_t k;
 };
 
 std::pair<SolidPartition, double> haplotype(std::vector<SNPSupport> supports, size_t k);
