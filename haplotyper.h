@@ -48,6 +48,8 @@ public:
 		PartitionAssignmentElement& operator=(size_t value);
 		PartitionAssignmentElement& operator=(const PartitionAssignmentElement) = delete;
 	private:
+		size_t getValueOld() const;
+		size_t getValueNew() const;
 		PartitionAssignmentElement(PartitionAssignments& container, size_t pos);
 		PartitionAssignments& container;
 		size_t pos;
@@ -135,10 +137,15 @@ public:
 	void push_back(size_t value);
 	size_t size() const;
 	size_t capacity() const;
+	size_t getk() const;
+	void reserve(size_t numAssignments);
 	iterator<PartitionAssignmentElement> begin();
 	iterator<PartitionAssignmentElement> end();
 	iterator<PartitionAssignmentElementConst> begin() const;
 	iterator<PartitionAssignmentElementConst> end() const;
+
+	size_t neededCapacity() const;
+	size_t dataCapacity() const;
 private:
 	void extendCapacity(size_t newCapacity, size_t defaultValue);
 	size_t k;
@@ -155,7 +162,7 @@ public:
 	SolidPartition(size_t k);
 	static std::vector<SolidPartition> getAllPartitions(size_t start, size_t end, size_t k);
 	template <typename Iterator>
-	SolidPartition(Iterator start, Iterator end, size_t k);
+	SolidPartition(Iterator start, Iterator end, size_t k, size_t numAssignments);
 	bool extends(const SolidPartition& second) const;
 	void unpermutate();
 	size_t getk() const;
@@ -171,9 +178,9 @@ private:
 class SparsePartition
 {
 public:
-	SparsePartition(size_t k);
-	SparsePartition(SolidPartition inner, std::set<size_t> actives);
-	static std::vector<SparsePartition> getAllPartitions(std::set<size_t> actives, size_t k);
+	SparsePartition(size_t k, size_t numSNPs);
+	SparsePartition(SolidPartition inner, std::set<size_t> actives, size_t numSNPs);
+	static std::vector<SparsePartition> getAllPartitions(std::set<size_t> actives, size_t k, size_t numSNPs);
 	SparsePartition merge(const SparsePartition& second) const;
 	SolidPartition getComparableIntersection(const SparsePartition& second) const;
 	SolidPartition getComparableIntersection(const std::set<size_t>& newActives) const;
@@ -182,11 +189,13 @@ public:
 	double deltaCost(const Column& col) const;
 	size_t getk() const;
 	size_t getAssignment(size_t loc) const;
+	std::set<size_t> getActives() const;
+	void setActives(const std::set<size_t>& actives);
 
 	SolidPartition inner;
-	std::set<size_t> actives;
 private:
 	SolidPartition getSubset(const std::set<size_t>& subset) const;
+	PartitionAssignments compressedActives;
 	size_t k;
 };
 

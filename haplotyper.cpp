@@ -77,22 +77,43 @@ std::set<size_t> setUnion(const std::set<size_t>& left, const std::set<size_t>& 
 	return ret;
 }
 
-SparsePartition::SparsePartition(size_t k) :
+SparsePartition::SparsePartition(size_t k, size_t maxSNP) :
 	inner(k),
-	actives(),
+	compressedActives(maxSNP),
 	k(k)
 {
 }
 
-SparsePartition::SparsePartition(SolidPartition inner, std::set<size_t> actives) :
+SparsePartition::SparsePartition(SolidPartition inner, std::set<size_t> actives, size_t maxSNP) :
 	inner(inner),
-	actives(actives),
+	compressedActives(maxSNP),
 	k(inner.getk())
 {
+	setActives(actives);
+}
+
+std::set<size_t> SparsePartition::getActives() const
+{
+	std::set<size_t> ret;
+	for (size_t i = 0; i < compressedActives.size(); i++)
+	{
+		ret.insert(compressedActives[i]);
+	}
+	return ret;
+}
+
+void SparsePartition::setActives(const std::set<size_t>& actives)
+{
+	compressedActives.reserve(actives.size());
+	for (auto x : actives)
+	{
+		compressedActives.push_back(x);
+	}
 }
 
 size_t SparsePartition::getAssignment(size_t loc) const
 {
+	std::set<size_t> actives = getActives();
 	assert(actives.size() == inner.assignments.size());
 	size_t index = 0;
 	auto iter = actives.begin();
@@ -109,13 +130,13 @@ size_t SparsePartition::getAssignment(size_t loc) const
 	return inner.assignments[index];
 }
 
-std::vector<SparsePartition> SparsePartition::getAllPartitions(std::set<size_t> actives, size_t k)
+std::vector<SparsePartition> SparsePartition::getAllPartitions(std::set<size_t> actives, size_t k, size_t maxSNP)
 {
 	std::vector<SolidPartition> solids = SolidPartition::getAllPartitions(0, actives.size(), k);
 	std::vector<SparsePartition> ret;
 	for (auto x : solids)
 	{
-		ret.emplace_back(x, actives);
+		ret.emplace_back(x, actives, maxSNP);
 		assert(x.assignments.size() == actives.size());
 	}
 	return ret;
@@ -125,8 +146,10 @@ SparsePartition SparsePartition::merge(const SparsePartition& second) const
 {
 	assert(second.extends(*this));
 	assert(k == second.k);
-	std::set<size_t> resultActives = setUnion(actives, second.actives);
-	std::set<size_t> intersection = setIntersection(actives, second.actives);
+	std::set<size_t> actives = getActives();
+	std::set<size_t> secondActives = second.getActives();
+	std::set<size_t> resultActives = setUnion(actives, secondActives);
+	std::set<size_t> intersection = setIntersection(actives, secondActives);
 	std::vector<size_t> leftIntersection;
 	std::vector<size_t> rightIntersection;
 	for (auto x : intersection)
@@ -136,8 +159,8 @@ SparsePartition SparsePartition::merge(const SparsePartition& second) const
 	}
 	std::vector<size_t> numbering = getNumbering(leftIntersection, rightIntersection, k);
 
-	SparsePartition ret { k };
-	ret.actives = resultActives;
+	SparsePartition ret { k, compressedActives.getk() };
+	ret.setActives(resultActives);
 	ret.inner.minRow = 0;
 	ret.inner.maxRow = resultActives.size();
 	for (auto x : resultActives)
@@ -148,7 +171,7 @@ SparsePartition SparsePartition::merge(const SparsePartition& second) const
 		}
 		else
 		{
-			assert(second.actives.count(x) == 1);
+			assert(secondActives.count(x) == 1);
 			assert(second.getAssignment(x) < k);
 			assert(numbering[second.getAssignment(x)] < k);
 			ret.inner.assignments.push_back(numbering[second.getAssignment(x)]);
@@ -160,7 +183,7 @@ SparsePartition SparsePartition::merge(const SparsePartition& second) const
 
 SolidPartition SparsePartition::getComparableIntersection(const std::set<size_t>& newActives) const
 {
-	std::set<size_t> realActives = setIntersection(newActives, actives);
+	std::set<size_t> realActives = setIntersection(newActives, getActives());
 	SolidPartition subset = getSubset(realActives);
 	subset.unpermutate();
 	return subset;
@@ -168,11 +191,12 @@ SolidPartition SparsePartition::getComparableIntersection(const std::set<size_t>
 
 SolidPartition SparsePartition::getComparableIntersection(const SparsePartition& second) const
 {
-	return getComparableIntersection(second.actives);
+	return getComparableIntersection(second.getActives());
 }
 
 SolidPartition SparsePartition::getSolid() const
 {
+	std::set<size_t> actives = getActives();
 	size_t min = *actives.lower_bound(0);
 	size_t max = *actives.upper_bound(-1);
 	for (size_t i = *actives.lower_bound(0); i < *actives.upper_bound(-1); i++)
@@ -187,7 +211,7 @@ SolidPartition SparsePartition::getSolid() const
 
 bool SparsePartition::extends(const SparsePartition& second) const
 {
-	std::set<size_t> intersection = setIntersection(actives, second.actives);
+	std::set<size_t> intersection = setIntersection(getActives(), second.getActives());
 	SolidPartition left = getSubset(intersection);
 	SolidPartition right = second.getSubset(intersection);
 	return left.extends(right);
@@ -199,6 +223,7 @@ double SparsePartition::deltaCost(const Column& col) const
 	std::vector<double> costSum;
 	costs.resize(k, {0, 0, 0, 0});
 	costSum.resize(k, 0);
+	std::set<size_t> actives = getActives();
 	auto iter = actives.begin();
 	size_t index = 0;
 	while (iter != actives.end())
@@ -246,6 +271,7 @@ SolidPartition SparsePartition::getSubset(const std::set<size_t>& subset) const
 {
 	assert(subset.size() > 0);
 	SolidPartition ret { k };
+	ret.assignments.reserve(subset.size());
 	ret.minRow = 0;
 	ret.maxRow = subset.size();
 	for (auto x : subset)
@@ -284,25 +310,64 @@ void swap(PartitionAssignments::PartitionAssignmentElement& left, PartitionAssig
 	right = value;
 }
 
-PartitionAssignments::PartitionAssignmentElement::operator size_t() const
+size_t PartitionAssignments::PartitionAssignmentElement::getValueOld() const
+{
+	size_t ret = 0;
+	size_t bytePos = ((pos+1)*container.log2k-1)/8;
+	size_t bitPos = ((pos+1)*container.log2k-1)%8;
+	for (size_t i = 0; i < container.log2k; i++)
+	{
+		ret <<= 1;
+		assert(container.data.size() > bytePos);
+		ret |= (container.data[bytePos]&(1<<bitPos))>>bitPos;
+		bitPos--;
+		if (bitPos >= 8)
+		{
+			bitPos = 7;
+			bytePos--;
+		}
+	}
+	return ret;
+}
+
+size_t PartitionAssignments::PartitionAssignmentElement::getValueNew() const
 {
 	size_t bytePos = pos*container.log2k/8;
 	size_t bitPos = (pos*container.log2k)%8;
 	assert(container.data.size() > bytePos);
 	size_t ret = 0;
-	for (size_t i = 0; i < container.log2k; i++)
+	unsigned char mask;
+	mask = 255-((1<<(bitPos))-1);
+	ret = container.data[bytePos] & mask;
+	ret >>= bitPos;
+	if (bitPos+container.log2k <= 8)
 	{
-		ret <<= 1;
-		ret |= (container.data[bytePos]&(1<<bitPos))>>bitPos;
-		bitPos++;
-		if (bitPos == 8)
-		{
-			bitPos = 0;
-			bytePos++;
-		}
+		ret &= (1<<(container.log2k))-1;
+		return ret;
 	}
-	assert(container.data.size() > bytePos);
+	assert(bitPos < 8);
+	size_t bitsEaten = 8-bitPos;
+	for (; bitsEaten+8 <= container.log2k; bitsEaten += 8)
+	{
+		bytePos++;
+		assert(bytePos < container.data.size());
+		ret += ((size_t)container.data[bytePos]) << bitsEaten;
+	}
+	if (bitsEaten < container.log2k)
+	{
+		bytePos++;
+		assert(bytePos < container.data.size());
+		ret += ((size_t)(container.data[bytePos]&((1<<(container.log2k-bitsEaten))-1))) << bitsEaten;
+	}
 	return ret;
+}
+
+PartitionAssignments::PartitionAssignmentElement::operator size_t() const
+{
+//	size_t oldValue = getValueOld();
+	size_t newValue = getValueNew();
+//	assert(oldValue == newValue);
+	return newValue;
 }
 
 PartitionAssignments::PartitionAssignmentElementConst::operator size_t() const
@@ -324,8 +389,8 @@ PartitionAssignments::PartitionAssignmentElement& PartitionAssignments::Partitio
 {
 	assert(container.k > 0);
 	assert(container.log2k > 0);
-	size_t bytePos = ((pos+1)*container.log2k-1)/8;
-	size_t bitPos = ((pos+1)*container.log2k-1)%8;
+	size_t bytePos = ((pos)*container.log2k)/8;
+	size_t bitPos = ((pos)*container.log2k)%8;
 	if (container.data.size() <= bytePos)
 	{
 		int a = 1;
@@ -347,11 +412,11 @@ PartitionAssignments::PartitionAssignmentElement& PartitionAssignments::Partitio
 		{
 			break;
 		}
-		bitPos--;
-		if (bitPos > 8)
+		bitPos++;
+		if (bitPos >= 8)
 		{
-			bitPos = 7;
-			bytePos--;
+			bitPos = 0;
+			bytePos++;
 		}
 	}
 	if (container.data.size() <= bytePos)
@@ -364,6 +429,11 @@ PartitionAssignments::PartitionAssignmentElement& PartitionAssignments::Partitio
 
 PartitionAssignments::PartitionAssignments(size_t k) : k(k), log2k(ceil(log2(k))), actualSize(0), data()
 {
+}
+
+size_t PartitionAssignments::getk() const
+{
+	return k;
 }
 
 PartitionAssignments::iterator<PartitionAssignments::PartitionAssignmentElement> PartitionAssignments::begin()
@@ -398,9 +468,10 @@ void PartitionAssignments::push_back(size_t value)
 {
 	assert(log2k > 0);
 	assert(k > 0);
+	assert(capacity() > size());
 	if (capacity() <= size())
 	{
-		extendCapacity(size()*2, 0);
+		extendCapacity(capacity()*2, 0);
 	}
 	(*this)[size()] = value;
 	actualSize++;
@@ -411,7 +482,8 @@ void PartitionAssignments::extendCapacity(size_t newCapacity, size_t defaultValu
 	assert(log2k > 0);
 	assert(k > 0);
 	assert(defaultValue == 0);
-	size_t newDataSize = (newCapacity*log2k/8+7)+1;
+	assert(newCapacity > 0);
+	size_t newDataSize = (newCapacity*log2k+7)/8;
 	data.resize(newDataSize, defaultValue);
 	assert(capacity() >= newCapacity);
 }
@@ -421,6 +493,22 @@ size_t PartitionAssignments::size() const
 	assert(log2k > 0);
 	assert(k > 0);
 	return actualSize;
+}
+
+void PartitionAssignments::reserve(size_t newSize)
+{
+	extendCapacity(newSize, 0);
+	data.shrink_to_fit();
+}
+
+size_t PartitionAssignments::neededCapacity() const
+{
+	return (size()*log2k+7)/8;
+}
+
+size_t PartitionAssignments::dataCapacity() const
+{
+	return data.capacity();
 }
 
 size_t PartitionAssignments::capacity() const
@@ -456,8 +544,8 @@ class SparsePartitionContainer
 public:
 	SparsePartitionContainer(std::vector<std::set<size_t>> readsPerSNP, size_t k);
 	size_t insertPartition(const SparsePartition& partition, size_t SNPnum);
-	size_t extendPartition(size_t partitionNum, const SparsePartition& extension, size_t SNPnum);
-	SparsePartition getPartition(size_t partitionNum) const;
+	size_t extendPartition(size_t partitionNum, const SparsePartition& extension, size_t SNPnum, size_t maxSNP);
+	SparsePartition getPartition(size_t partitionNum, size_t maxSNP) const;
 	void clearUnused(std::vector<size_t> used);
 private:
 	size_t extend(size_t index, const std::vector<size_t>& extension);
@@ -511,7 +599,7 @@ size_t SparsePartitionContainer::insertPartition(const SparsePartition& partitio
 	return extend(-1, extension);
 }
 
-size_t SparsePartitionContainer::extendPartition(size_t partitionNum, const SparsePartition& partition, size_t SNPnum)
+size_t SparsePartitionContainer::extendPartition(size_t partitionNum, const SparsePartition& partition, size_t SNPnum, size_t maxSNP)
 {
 	size_t numNews = SNPstarts[SNPnum+1]-SNPstarts[SNPnum];
 	if (numNews == 0)
@@ -519,8 +607,10 @@ size_t SparsePartitionContainer::extendPartition(size_t partitionNum, const Spar
 		return partitionNum;
 	}
 	assert(partitionNum < partitionsLinkedList.size());
-	SparsePartition old = getPartition(partitionNum);
-	std::set<size_t> intersection = setIntersection(old.actives, partition.actives);
+	SparsePartition old = getPartition(partitionNum, maxSNP);
+	std::set<size_t> oldActives = old.getActives();
+	std::set<size_t> partitionActives = partition.getActives();
+	std::set<size_t> intersection = setIntersection(oldActives, partitionActives);
 	std::vector<size_t> leftNumbering;
 	std::vector<size_t> rightNumbering;
 	leftNumbering.reserve(intersection.size());
@@ -537,8 +627,8 @@ size_t SparsePartitionContainer::extendPartition(size_t partitionNum, const Spar
 	{
 		extension.push_back(numbering[partition.getAssignment(readOrdering[i])]);
 	}
-	assert(SNPstarts[SNPnum] == old.actives.size());
-	assert(old.actives.size() + extension.size() == setUnion(old.actives, partition.actives).size());
+	assert(SNPstarts[SNPnum] == oldActives.size());
+	assert(oldActives.size() + extension.size() == setUnion(oldActives, partitionActives).size());
 	size_t result = extend(partitionNum, extension);
 //	SparsePartition resultPartition = getPartition(result);
 //	assert(resultPartition.actives.size() == SNPstarts[SNPnum+1]);
@@ -575,7 +665,7 @@ size_t SparsePartitionContainer::extend(size_t index, const std::vector<size_t>&
 	return index;
 }
 
-SparsePartition SparsePartitionContainer::getPartition(size_t partitionNum) const
+SparsePartition SparsePartitionContainer::getPartition(size_t partitionNum, size_t maxSNP) const
 {
 	std::vector<size_t> assignments;
 	assert(partitionNum < partitionsLinkedList.size());
@@ -591,18 +681,21 @@ SparsePartition SparsePartitionContainer::getPartition(size_t partitionNum) cons
 	}
 	assert(position == 0);
 
-	SparsePartition ret { k };
+	SparsePartition ret { k, maxSNP };
+	std::set<size_t> actives;
+	ret.inner.assignments.reserve(assignments.size());
 	for (size_t i = 0; i < inverseReadOrdering.size(); i++)
 	{
 		if (inverseReadOrdering[i] < assignments.size())
 		{
 			assert(assignments[inverseReadOrdering[i]] != -1);
 			ret.inner.assignments.push_back(assignments[inverseReadOrdering[i]]);
-			ret.actives.insert(i);
+			actives.insert(i);
 		}
 	}
+	ret.setActives(actives);
 	assert(ret.inner.assignments.size() == assignments.size());
-	assert(ret.actives.size() == assignments.size());
+	assert(ret.getActives().size() == assignments.size());
 	return ret;
 }
 
@@ -661,7 +754,7 @@ std::vector<SolidPartition> SolidPartition::getAllPartitions(size_t start, size_
 	rowsOccupied[0] = end-start;
 	if (end == start+1)
 	{
-		ret.emplace_back(newPartition.begin(), newPartition.begin()+(end-start), k);
+		ret.emplace_back(newPartition.begin(), newPartition.begin()+(end-start), k, end-start);
 		ret.back().minRow = start;
 		ret.back().maxRow = end;
 		return ret;
@@ -670,7 +763,7 @@ std::vector<SolidPartition> SolidPartition::getAllPartitions(size_t start, size_
 	bool repeat = true;
 	while (repeat)
 	{
-		ret.emplace_back(newPartition.begin(), newPartition.begin()+(end-start), k);
+		ret.emplace_back(newPartition.begin(), newPartition.begin()+(end-start), k, end-start);
 		ret.back().minRow = start;
 		ret.back().maxRow = end;
 		assert(loc < end-start);
@@ -821,11 +914,8 @@ std::vector<std::vector<size_t>> findExtensions(const std::vector<std::pair<size
 			{
 				for (size_t j = lastIndex; j < lastIndexEnd; j++)
 				{
-					assert(newRow[newNewRow[i].first].extends(lastRow[newLastRow[j].first]));
 					assert(i < newNewRow.size());
 					assert(j < newLastRow.size());
-					assert(newNewRow[i].first < newRow.size());
-					assert(newLastRow[j].first < lastRow.size());
 					ret[newNewRow[i].first].push_back(newLastRow[j].first);
 				}
 			}
@@ -909,12 +999,14 @@ void SolidPartition::unpermutate()
 }
 
 template <typename Iterator>
-SolidPartition::SolidPartition(Iterator start, Iterator end, size_t k) :
+SolidPartition::SolidPartition(Iterator start, Iterator end, size_t k, size_t numAssignments) :
 	assignments(k),
 	minRow(),
 	maxRow(),
 	k(k)
 {
+	assert(numAssignments > 0);
+	assignments.reserve(numAssignments);
 	size_t pos = 0;
 	while (start != end)
 	{
@@ -958,7 +1050,7 @@ std::vector<std::set<size_t>> getActiveRows(std::vector<SNPSupport> supports)
 	}
 	return ret;
 }
-
+/*
 bool verifyContainer(const std::vector<SparsePartition>& partitions, const SparsePartitionContainer& container, const std::vector<size_t>& mapping)
 {
 	if (partitions.size() != mapping.size())
@@ -973,7 +1065,7 @@ bool verifyContainer(const std::vector<SparsePartition>& partitions, const Spars
 		}
 	}
 	return true;
-}
+}*/
 
 std::vector<size_t> findOptimalExtensions(const std::vector<std::vector<size_t>>& extensions, const std::vector<double>& oldCosts)
 {
@@ -1053,7 +1145,7 @@ std::pair<SolidPartition, double> haplotype(std::vector<SNPSupport> supports, si
 	auto lastColumnTime = std::chrono::system_clock::now();
 	Column oldColumn { supportsPerSNP[firstSNP].begin(), supportsPerSNP[firstSNP].end(), firstSNP, 0, maxRead };
 
-	std::vector<SparsePartition> oldRowPartitions = SparsePartition::getAllPartitions(activeRowsPerColumn[firstSNP], k);
+	std::vector<SparsePartition> oldRowPartitions = SparsePartition::getAllPartitions(activeRowsPerColumn[firstSNP], k, maxSNP);
 	std::vector<double> oldRowCosts;
 	std::vector<size_t> oldOptimalPartitions;
 	for (size_t i = 0; i < oldRowPartitions.size(); i++)
@@ -1081,8 +1173,9 @@ std::pair<SolidPartition, double> haplotype(std::vector<SNPSupport> supports, si
 			}
 			continue;
 		}
-		std::vector<SparsePartition> newRowPartitions = SparsePartition::getAllPartitions(activeRowsPerColumn[snp], k);
+		std::vector<SparsePartition> newRowPartitions = SparsePartition::getAllPartitions(activeRowsPerColumn[snp], k, maxSNP);
 		std::cerr << " (" << newRowPartitions.size() << " partitions)";
+		std::cerr << " (" << newRowPartitions[0].inner.assignments.neededCapacity() << "/" << newRowPartitions[0].inner.assignments.dataCapacity() << ")";
 		std::vector<size_t> optimalExtensions;
 		{
 			auto tempOldRowPartitions = splitIntersection(oldRowPartitions, setIntersection(activeRowsPerColumn[snp], activeRowsPerColumn[snp-1]));
@@ -1101,7 +1194,7 @@ std::pair<SolidPartition, double> haplotype(std::vector<SNPSupport> supports, si
 			assert(optimalExtensions[j] < oldOptimalPartitions.size());
 			assert(optimalExtensions[j] < oldRowCosts.size());
 			newRowCosts.push_back(oldRowCosts[optimalExtensions[j]]+newRowPartitions[j].deltaCost(col));
-			newOptimalPartitions.push_back(optimalPartitions.extendPartition(oldOptimalPartitions[optimalExtensions[j]], newRowPartitions[j], snp));
+			newOptimalPartitions.push_back(optimalPartitions.extendPartition(oldOptimalPartitions[optimalExtensions[j]], newRowPartitions[j], snp, maxSNP));
 		}
 		clearVector(optimalExtensions);
 		optimalPartitions.clearUnused(newOptimalPartitions);
@@ -1118,5 +1211,5 @@ std::pair<SolidPartition, double> haplotype(std::vector<SNPSupport> supports, si
 			optimalResultIndex = i;
 		}
 	}
-	return std::pair<SolidPartition, double>{optimalPartitions.getPartition(oldOptimalPartitions[optimalResultIndex]).getSolid(), oldRowCosts[optimalResultIndex]};
+	return std::pair<SolidPartition, double>{optimalPartitions.getPartition(oldOptimalPartitions[optimalResultIndex], maxSNP).getSolid(), oldRowCosts[optimalResultIndex]};
 }
