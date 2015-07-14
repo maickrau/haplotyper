@@ -48,8 +48,7 @@ public:
 		PartitionAssignmentElement& operator=(size_t value);
 		PartitionAssignmentElement& operator=(const PartitionAssignmentElement) = delete;
 	private:
-		size_t getValueOld() const;
-		size_t getValueNew() const;
+		size_t getValue() const;
 		PartitionAssignmentElement(PartitionAssignments& container, size_t pos);
 		PartitionAssignments& container;
 		size_t pos;
@@ -144,8 +143,6 @@ public:
 	iterator<PartitionAssignmentElementConst> begin() const;
 	iterator<PartitionAssignmentElementConst> end() const;
 
-	size_t neededCapacity() const;
-	size_t dataCapacity() const;
 private:
 	void extendCapacity(size_t newCapacity, size_t defaultValue);
 	size_t k;
@@ -163,16 +160,13 @@ public:
 	static std::vector<SolidPartition> getAllPartitions(size_t start, size_t end, size_t k);
 	template <typename Iterator>
 	SolidPartition(Iterator start, Iterator end, size_t k, size_t numAssignments);
-	bool extends(const SolidPartition& second) const;
 	void unpermutate();
 	size_t getk() const;
-	size_t getValue(size_t index) const;
 
 	PartitionAssignments assignments;
 	size_t minRow;
 	size_t maxRow;
 private:
-//	size_t k;
 };
 
 class SparsePartition
@@ -181,23 +175,15 @@ public:
 	SparsePartition(size_t k);
 	SparsePartition(SolidPartition inner);
 	static std::vector<SparsePartition> getAllPartitions(std::set<size_t> actives, size_t k);
-	SparsePartition merge(const SparsePartition& second, const std::set<size_t>& actives, const std::set<size_t>& secondActives) const;
-	SolidPartition getComparableIntersection(const SparsePartition& second, const std::set<size_t>& actives, const std::set<size_t>& secondActives) const;
-	SolidPartition getComparableIntersection(const std::set<size_t>& newActives, const std::set<size_t>& actives) const;
 	SolidPartition getSolid(const std::set<size_t>& actives) const;
 	SolidPartition getSolidFromIndices(const std::set<size_t>& pickThese) const;
-	bool extends(const SparsePartition& second, const std::set<size_t>& actives, const std::set<size_t>& secondActives) const;
 	double deltaCost(const Column& col, const std::set<size_t>& actives) const;
 	size_t getk() const;
 	size_t getAssignment(size_t loc, const std::set<size_t>& actives) const;
-//	std::set<size_t> getActives() const;
-//	void setActives(const std::set<size_t>& actives);
 
 	SolidPartition inner;
 private:
 	SolidPartition getSubset(const std::set<size_t>& subset, const std::set<size_t>& actives) const;
-//	PartitionAssignments compressedActives;
-//	size_t k;
 };
 
 std::pair<SolidPartition, double> haplotype(std::vector<SNPSupport> supports, size_t k);
