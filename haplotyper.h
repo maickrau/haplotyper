@@ -181,11 +181,11 @@ public:
 	bool extends(const SparsePartition& second) const;
 	double deltaCost(const Column& col) const;
 	size_t getk() const;
+	size_t getAssignment(size_t loc) const;
 
 	SolidPartition inner;
 	std::set<size_t> actives;
 private:
-	size_t getAssignment(size_t loc) const;
 	SolidPartition getSubset(const std::set<size_t>& subset) const;
 	size_t k;
 };
