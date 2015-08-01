@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cassert>
+#include <unordered_map>
 
 #include "variant_utils.h"
 
@@ -299,4 +300,153 @@ SupportRenumbering loadRenumbering(std::string fileName)
 	}
 	assert(file.good());
 	return ret;
+}
+
+SNPLine::SNPLine() {};
+
+bool SNPLine::operator==(const SNPLine& second) const
+{
+	return variantsAtLocations == second.variantsAtLocations;
+}
+
+bool SNPLine::operator!=(const SNPLine& second) const
+{
+	return !(*this == second);
+}
+
+bool SNPLine::contains(const SNPLine& second) const
+{
+	if (variantsAtLocations.size() < second.variantsAtLocations.size())
+	{
+		return false;
+	}
+	size_t index = 0;
+	size_t secondIndex = 0;
+	while (index < variantsAtLocations.size() && secondIndex < second.variantsAtLocations.size())
+	{
+		if (variantsAtLocations[index].first < second.variantsAtLocations[secondIndex].first)
+		{
+			index++;
+		}
+		else if (variantsAtLocations[index].first == second.variantsAtLocations[secondIndex].first)
+		{
+			if (variantsAtLocations[index].second != second.variantsAtLocations[secondIndex].second)
+			{
+				return false;
+			}
+			index++;
+			secondIndex++;
+		}
+		else if (variantsAtLocations[index].first > second.variantsAtLocations[secondIndex].first)
+		{
+			return false;
+		}
+	}
+	if (index == variantsAtLocations.size() && secondIndex < second.variantsAtLocations.size())
+	{
+		return false;
+	}
+	return true;
+}
+
+void SNPLine::mergeSubset(SNPLine second)
+{
+	size_t index = 0;
+	size_t secondIndex = 0;
+	while (index < variantsAtLocations.size() && secondIndex < second.variantsAtLocations.size())
+	{
+		if (variantsAtLocations[index].first < second.variantsAtLocations[secondIndex].first)
+		{
+			index++;
+		}
+		else if (variantsAtLocations[index].first == second.variantsAtLocations[secondIndex].first)
+		{
+			assert(variantsAtLocations[index].second == second.variantsAtLocations[secondIndex].second);
+			supportsAtLocations[index] += second.supportsAtLocations[secondIndex];
+			index++;
+			secondIndex++;
+		}
+		else
+		{
+			assert(false);
+		}
+	}
+}
+
+std::vector<SNPSupport> SNPLine::toSupports() const
+{
+	std::vector<SNPSupport> ret;
+	for (size_t i = 0; i < variantsAtLocations.size(); i++)
+	{
+		ret.emplace_back(readNum, variantsAtLocations[i].first, variantsAtLocations[i].second, supportsAtLocations[i]);
+	}
+	return ret;
+}
+
+void SNPLine::merge(SNPLine second)
+{
+	assert(supportsAtLocations.size() == second.supportsAtLocations.size());
+	for (size_t i = 0; i < supportsAtLocations.size(); i++)
+	{
+		supportsAtLocations[i] += second.supportsAtLocations[i];
+	}
+}
+
+char SNPLine::variantAt(size_t loc) const
+{
+	for (auto x : variantsAtLocations)
+	{
+		if (x.first == loc)
+		{
+			return x.second;
+		}
+	}
+	assert(false);
+}
+
+std::vector<SNPLine> makeLines(std::vector<SNPSupport> supports)
+{
+	std::sort(supports.begin(), supports.end(), [](SNPSupport left, SNPSupport right) { return left.SNPnum < right.SNPnum; });
+	std::set<size_t> reads;
+	for (auto x : supports)
+	{
+		reads.insert(x.readNum);
+	}
+	std::vector<SNPLine> result;
+	for (auto x : reads)
+	{
+		result.emplace_back(supports.begin(), supports.end(), x);
+	}
+	return result;
+}
+
+std::vector<SNPSupport> mergeRows(std::vector<SNPSupport> oldSupports, size_t row1, size_t row2)
+{
+	std::vector<SNPSupport> result;
+	std::unordered_map<size_t, SNPSupport> newRow;
+	for (auto x : oldSupports)
+	{
+		if (x.readNum != row1 && x.readNum != row2)
+		{
+			result.push_back(x);
+		}
+		else
+		{
+			if (newRow.find(x.SNPnum) == newRow.end())
+			{
+				newRow.emplace(x.SNPnum, x);
+				newRow.at(x.SNPnum).readNum = row1;
+			}
+			else
+			{
+				assert(newRow.at(x.SNPnum).variant == x.variant);
+				newRow.at(x.SNPnum).support += x.support;
+			}
+		}
+	}
+	for (auto x : newRow)
+	{
+		result.push_back(x.second);
+	}
+	return result;
 }

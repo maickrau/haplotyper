@@ -144,8 +144,6 @@ std::vector<SparsePartition> SparsePartition::getAllPartitions(std::set<size_t> 
 SolidPartition SparsePartition::getSolidFromIndices(const std::set<size_t>& pickThese) const
 {
 	SolidPartition ret { getk() };
-	ret.minRow = 0;
-	ret.maxRow = pickThese.size();
 	ret.assignments.reserve(pickThese.size());
 	for (auto x : pickThese)
 	{
@@ -163,8 +161,6 @@ SolidPartition SparsePartition::getSolid(const std::set<size_t>& actives) const
 		assert(actives.count(i) == 1);
 	}
 	SolidPartition subset = getSubset(actives, actives);
-	subset.minRow = *actives.lower_bound(0);
-	subset.maxRow = *actives.upper_bound(-1);
 	return subset;
 }
 
@@ -222,8 +218,6 @@ SolidPartition SparsePartition::getSubset(const std::set<size_t>& subset, const 
 	assert(subset.size() > 0);
 	SolidPartition ret { getk() };
 	ret.assignments.reserve(subset.size());
-	ret.minRow = 0;
-	ret.maxRow = subset.size();
 	for (auto x : subset)
 	{
 		assert(getAssignment(x, actives) < getk());
@@ -233,7 +227,7 @@ SolidPartition SparsePartition::getSubset(const std::set<size_t>& subset, const 
 }
 
 
-SolidPartition::SolidPartition(size_t k) : assignments(k), minRow(0), maxRow(0) {}
+SolidPartition::SolidPartition(size_t k) : assignments(k) {}
 
 PartitionAssignments::PartitionAssignmentElement::PartitionAssignmentElement(PartitionAssignments& container, size_t pos)	:
 	container(container),
@@ -642,8 +636,6 @@ std::vector<SolidPartition> SolidPartition::getAllPartitions(size_t start, size_
 	if (end == start+1)
 	{
 		ret.emplace_back(newPartition.begin(), newPartition.begin()+(end-start), k, end-start);
-		ret.back().minRow = start;
-		ret.back().maxRow = end;
 		return ret;
 	}
 	size_t loc = end-start-1;
@@ -651,8 +643,6 @@ std::vector<SolidPartition> SolidPartition::getAllPartitions(size_t start, size_
 	while (repeat)
 	{
 		ret.emplace_back(newPartition.begin(), newPartition.begin()+(end-start), k, end-start);
-		ret.back().minRow = start;
-		ret.back().maxRow = end;
 		assert(loc < end-start);
 		assert(newPartition[loc] < k);
 		assert(rowsOccupied[newPartition[loc]] > 0);
@@ -794,9 +784,7 @@ void SolidPartition::unpermutate()
 
 template <typename Iterator>
 SolidPartition::SolidPartition(Iterator start, Iterator end, size_t k, size_t numAssignments) :
-	assignments(k),
-	minRow(),
-	maxRow()
+	assignments(k)
 {
 	assert(numAssignments > 0);
 	assignments.reserve(numAssignments);

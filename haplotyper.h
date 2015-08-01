@@ -164,8 +164,6 @@ public:
 	size_t getk() const;
 
 	PartitionAssignments assignments;
-	size_t minRow;
-	size_t maxRow;
 private:
 };
 

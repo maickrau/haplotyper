@@ -1,6 +1,7 @@
 //g++ haplotyper_test.cpp haplotyper.cpp variant_utils.cpp fasta_utils.cpp -std=c++11 -o haplotyper_test.exe
 //./haplotyperTest.exe
 
+#include <iostream>
 #include <cassert>
 
 #include "haplotyper.h"
@@ -20,6 +21,7 @@ int main(int argc, char** argv)
 		{4, 3, 'T', 1},
 		{4, 4, 'T', 1}
 	};
+	std::cout << sizeof(SparsePartition) << "\n";
 	assert(haplotype(supports, 1).second == 6);
 	assert(haplotype(supports, 2).second == 2);
 	assert(haplotype(supports, 3).second == 0);

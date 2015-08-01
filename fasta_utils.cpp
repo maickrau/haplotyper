@@ -18,7 +18,7 @@ std::vector<Genome> loadFastas(std::string fileName)
 			std::getline(file, ret.back().name);
 			a = file.get();
 		}
-		if (a != '\n')
+		if (a == 'a' || a == 'A' || a == 'c' || a == 'C' || a == 'g' || a == 'G' || a == 't' || a == 'T')
 		{
 			ret.back().bases.push_back(a);
 		}

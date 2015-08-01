@@ -116,5 +116,11 @@ int main(int argc, char** argv)
 	std::vector<size_t> genomes = getGenomeIds(loadFastas(argv[2]));
 	std::vector<size_t> assignments = loadAssignments(argv[1]);
 	size_t result = calculateResult(genomes, assignments);
-	std::cout << result;
+	size_t unsolved = std::count(assignments.begin(), assignments.end(), -1);
+	double normalizedScore = 1.0-(double)result/(double)(assignments.size()-unsolved);
+	std::cout << normalizedScore << "\n";
+	std::cout << result << "\n";
+	std::cout << assignments.size()-unsolved << "\n";
+	std::cout << unsolved << "\n";
+	std::cout << assignments.size() << "\n";
 }

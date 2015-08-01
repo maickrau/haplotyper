@@ -87,35 +87,36 @@ std::vector<SNPSupport> getMovedSupports(const std::vector<MovedSupport>& suppor
 
 double getEnergy(std::vector<SNPSupport> supports)
 {
-	std::vector<size_t> minRow;
-	std::vector<size_t> maxRow;
+	std::vector<std::pair<size_t, size_t>> rowExtents;
+	size_t maxRead = 0;
+	size_t maxSNP = 0;
 	for (auto x : supports)
 	{
-		if (minRow.size() <= x.SNPnum)
+		maxRead = std::max(maxRead, x.readNum);
+		maxSNP = std::max(maxSNP, x.SNPnum);
+	}
+	maxRead++;
+	maxSNP++;
+	rowExtents.resize(maxRead, {-1, 0});
+	for (auto x : supports)
+	{
+		rowExtents[x.readNum].first = std::min(x.SNPnum, rowExtents[x.readNum].first);
+		rowExtents[x.readNum].second = std::max(x.SNPnum, rowExtents[x.readNum].second);
+	}
+	double total = 0;
+	for (size_t i = 0; i < maxSNP; i++)
+	{
+		size_t numRows = 0;
+		for (size_t j = 0; j < rowExtents.size(); j++)
 		{
-			minRow.resize(x.SNPnum+1, -1);
+			if (rowExtents[j].first <= i && rowExtents[j].second >= i)
+			{
+				numRows++;
+			}
 		}
-		if (maxRow.size() <= x.SNPnum)
-		{
-			maxRow.resize(x.SNPnum+1, 0);
-		}
-		minRow[x.SNPnum] = std::min(minRow[x.SNPnum], x.readNum);
-		maxRow[x.SNPnum] = std::max(maxRow[x.SNPnum], x.readNum);
+		total += pow(2, numRows);
 	}
-	for (size_t i = 1; i < maxRow.size(); i++)
-	{
-		maxRow[i] = std::max(maxRow[i], maxRow[i-1]);
-	}
-	for (size_t i = minRow.size()-2; i < minRow.size(); i--)
-	{
-		minRow[i] = std::min(minRow[i], minRow[i+1]);
-	}
-	double ret = 0;
-	for (size_t i = 0; i < minRow.size(); i++)
-	{
-		ret += pow(2, maxRow[i]-minRow[i]);
-	}
-	return ret;
+	return total;
 }
 
 double getEnergy(const std::vector<MovedSupport>& supports)
@@ -439,48 +440,105 @@ SupportRenumbering shrinkBiggestColumn(const SupportRenumbering& numbering, cons
 	return ret;
 }
 
+SupportRenumbering permutateColumns(const SupportRenumbering& numbering, std::set<size_t> permutableIndices)
+{
+	std::mt19937 mt {(size_t)std::chrono::system_clock::now().time_since_epoch().count()};
+	std::uniform_real_distribution<double> continueSelector {0, 1.0};
+	std::uniform_int_distribution<size_t> rowSelector {0, numbering.SNPSize()-1};
+
+	while (permutableIndices.size() < 2 || continueSelector(mt) < 0.8)
+	{
+		permutableIndices.insert(rowSelector(mt));
+	}
+
+	std::vector<size_t> indices;
+	for (auto x : permutableIndices)
+	{
+		indices.push_back(x);
+	}
+	std::shuffle(indices.begin(), indices.end(), mt);
+
+	std::vector<size_t> columnIndices;
+	columnIndices.reserve(numbering.SNPSize());
+	size_t num = 0;
+	for (size_t i = 0; i < numbering.SNPSize(); i++)
+	{
+		if (permutableIndices.count(i) == 0)
+		{
+			columnIndices.push_back(numbering.getSNPRenumbering(i));
+		}
+		else
+		{
+			assert(num < indices.size());
+			columnIndices.push_back(numbering.getSNPRenumbering(indices[num]));
+			num++;
+		}
+	}
+	assert(num == indices.size());
+
+	SupportRenumbering ret;
+	for (size_t i = 0; i < numbering.SNPSize(); i++)
+	{
+		ret.addSNPRenumbering(i, columnIndices[i]);
+	}
+	for (size_t i = 0; i < numbering.readSize(); i++)
+	{
+		ret.addReadRenumbering(i, numbering.getReadRenumbering(i));
+	}
+
+	return ret;
+}
+
+SupportRenumbering permutateColumns(const SupportRenumbering& numbering)
+{
+	return permutateColumns(numbering, std::set<size_t>{});
+}
+
+SupportRenumbering permutateColumnsGuided(const SupportRenumbering& numbering, const std::vector<SNPSupport>& supports)
+{
+	std::vector<std::pair<size_t, size_t>> rowExtents;
+	rowExtents.resize(numbering.readSize(), {-1, 0});
+	for (auto x : supports)
+	{
+		rowExtents[numbering.getReadRenumbering(x.readNum)].first = std::max(rowExtents[numbering.getReadRenumbering(x.readNum)].first, numbering.getSNPRenumbering(x.SNPnum));
+		rowExtents[numbering.getReadRenumbering(x.readNum)].second = std::min(rowExtents[numbering.getReadRenumbering(x.readNum)].second, numbering.getSNPRenumbering(x.SNPnum));
+	}
+	size_t maxSNPIndex = 0;
+	size_t maxSNPCoverage = 0;
+	for (size_t i = 0; i < numbering.SNPSize(); i++)
+	{
+		size_t coverage = 0;
+		for (size_t j = 0; j < numbering.readSize(); j++)
+		{
+			if (rowExtents[j].first <= i && rowExtents[j].second >= i)
+			{
+				coverage++;
+			}
+		}
+		if (coverage > maxSNPCoverage)
+		{
+			maxSNPIndex = i;
+			maxSNPCoverage = coverage;
+		}
+	}
+	return permutateColumns(numbering, std::set<size_t> { maxSNPIndex });
+}
+
 SupportRenumbering getNeighbor(const SupportRenumbering& numbering, const std::vector<SNPSupport>& supports)
 {
     std::mt19937 mt {(size_t)std::chrono::system_clock::now().time_since_epoch().count()};
-    std::uniform_int_distribution<int> method{0, 4};
+    std::uniform_int_distribution<int> method{0, 1};
     int chosen = method(mt);
-    SupportRenumbering ret {numbering};
-
+    SupportRenumbering ret;
     switch (chosen)
     {
 	case 0:
-		ret = swapOneRow(numbering);
+		ret = permutateColumns(numbering);
 		break;
 	case 1:
-		ret = swapOneColumn(numbering);
+		ret = permutateColumnsGuided(numbering, supports);
 		break;
-	case 2:
-		ret = adjSwapOneRow(numbering);
-		break;
-	case 3:
-		ret = adjSwapOneColumn(numbering);
-		break;
-	case 4:
-		ret = shrinkBiggestColumn(numbering, supports);
-		break;
-/*	case 0:
-		ret = swapK(numbering, 1);
-		assert(ret.checkValidity());
-		break;
-	case 1:
-		ret = adjSwapK(numbering, 1);
-		assert(ret.checkValidity());
-		break;
-	case 2:
-		ret = reverse(numbering);
-		assert(ret.checkValidity());
-		break;
-	case 3:
-		ret = relocate(numbering);
-		assert(ret.checkValidity());
-		break;*/
     }
-    
     return ret;
 }
 
@@ -533,6 +591,7 @@ SupportRenumbering makeBandedSimulatedAnnealing(const std::vector<SNPSupport>& s
 	for (int i = 0; i < iterations; i++)
 	{
 		SupportRenumbering newRenumbering = getNeighbor(current, supports);
+		assert(newRenumbering.checkValidity());
 		double newEnergy = getEnergy(renumberSupports(supports, newRenumbering));
 		if (newEnergy < bestEnergy)
 		{
@@ -683,6 +742,8 @@ SupportRenumbering makeBandedRowDistance(const std::vector<SNPSupport>& supports
 int main(int argc, char** argv)
 {
 	std::vector<SNPSupport> supports = loadSupports(argv[1]);
+
+	std::cerr << "starting score " << getEnergy(supports) << "\n";
 
 	SupportRenumbering numbering = getIdentityRenumbering(supports);
 

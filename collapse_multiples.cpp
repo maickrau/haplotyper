@@ -8,59 +8,6 @@
 
 #include "variant_utils.h"
 
-class SNPLine
-{
-public:
-	template <typename Iterator>
-	SNPLine(Iterator supportsStart, Iterator supportsEnd, size_t readNum) : variantsAtLocations(), supportsAtLocations(), readNum(readNum)
-	{
-		static_assert(std::is_constructible<SNPSupport, decltype(*supportsStart)>::value, "");
-		while (supportsStart != supportsEnd)
-		{
-			SNPSupport x = *supportsStart;
-			if (x.readNum == readNum)
-			{
-				variantsAtLocations.emplace_back(x.SNPnum, x.variant);
-				supportsAtLocations.push_back(x.support);
-			}
-			supportsStart++;
-		}
-	}
-	SNPLine() {};
-	std::vector<std::pair<size_t, char>> variantsAtLocations;
-	std::vector<double> supportsAtLocations;
-	void merge(SNPLine second);
-	size_t readNum;
-	bool operator==(const SNPLine& second)
-	{
-		return variantsAtLocations == second.variantsAtLocations;
-	}
-	bool operator!=(const SNPLine& second)
-	{
-		return !(*this == second);
-	}
-	std::vector<SNPSupport> toSupports();
-};
-
-std::vector<SNPSupport> SNPLine::toSupports()
-{
-	std::vector<SNPSupport> ret;
-	for (size_t i = 0; i < variantsAtLocations.size(); i++)
-	{
-		ret.emplace_back(readNum, variantsAtLocations[i].first, variantsAtLocations[i].second, supportsAtLocations[i]);
-	}
-	return ret;
-}
-
-void SNPLine::merge(SNPLine second)
-{
-	assert(supportsAtLocations.size() == second.supportsAtLocations.size());
-	for (size_t i = 0; i < supportsAtLocations.size(); i++)
-	{
-		supportsAtLocations[i] += second.supportsAtLocations[i];
-	}
-}
-
 std::pair<SupportRenumbering, std::vector<SNPSupport>> mergeSupports(std::vector<SNPSupport> supports)
 {
 	SupportRenumbering renumbering;

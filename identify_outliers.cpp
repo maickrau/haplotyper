@@ -21,26 +21,34 @@ std::vector<SNPSupport> markOutliers(std::vector<SNPSupport> in, int numOfOutlie
 	std::vector<SNPSupport> result = in;
 	for (int i = 0; i < numOfOutliers; i++)
 	{
-		std::vector<std::tuple<size_t, size_t, size_t, size_t>> extents;
-		extents.resize(numSNPs, std::make_tuple(-1, -1, 0, 0));
+		std::vector<std::tuple<size_t, size_t, size_t, size_t>> rowExtents;
+		rowExtents.resize(numRows, std::make_tuple(-1, -1, 0, 0));
 		for (auto x : result)
 		{
 			if (x.variant == 'X')
 			{
 				continue;
 			}
-			if (x.readNum <= std::get<0>(extents[x.SNPnum]))
+			if (x.SNPnum <= std::get<0>(rowExtents[x.readNum]))
 			{
-				std::get<1>(extents[x.SNPnum]) = std::get<0>(extents[x.SNPnum]);
-				std::get<0>(extents[x.SNPnum]) = x.readNum;
+				std::get<1>(rowExtents[x.readNum]) = std::get<0>(rowExtents[x.readNum]);
+				std::get<0>(rowExtents[x.readNum]) = x.SNPnum;
 			}
-			if (x.readNum >= std::get<3>(extents[x.SNPnum]))
+			else if (x.SNPnum <= std::get<1>(rowExtents[x.readNum]))
 			{
-				std::get<2>(extents[x.SNPnum]) = std::get<3>(extents[x.SNPnum]);
-				std::get<3>(extents[x.SNPnum]) = x.readNum;
+				std::get<1>(rowExtents[x.readNum]) = x.SNPnum;
+			}
+			if (x.SNPnum >= std::get<3>(rowExtents[x.readNum]))
+			{
+				std::get<2>(rowExtents[x.readNum]) = std::get<3>(rowExtents[x.readNum]);
+				std::get<3>(rowExtents[x.readNum]) = x.SNPnum;
+			}
+			else if (x.SNPnum >= std::get<2>(rowExtents[x.readNum]))
+			{
+				std::get<2>(rowExtents[x.readNum]) = x.SNPnum;
 			}
 		}
-		for (auto& x : extents)
+		for (auto& x : rowExtents)
 		{
 			if (std::get<1>(x) == -1)
 			{
@@ -51,32 +59,32 @@ std::vector<SNPSupport> markOutliers(std::vector<SNPSupport> in, int numOfOutlie
 				std::get<2>(x) = std::get<3>(x);
 			}
 		}
-		size_t maxSNP = 0;
+		size_t maxRead = 0;
 		size_t maxLength = 0;
 		bool top = true;
-		for (size_t i = 0; i < extents.size(); i++)
+		for (size_t i = 0; i < rowExtents.size(); i++)
 		{
-			if (std::get<1>(extents[i])-std::get<0>(extents[i]) > maxLength)
+			if (std::get<1>(rowExtents[i])-std::get<0>(rowExtents[i]) > maxLength)
 			{
-				maxLength = std::get<1>(extents[i])-std::get<0>(extents[i]);
-				maxSNP = i;
+				maxLength = std::get<1>(rowExtents[i])-std::get<0>(rowExtents[i]);
+				maxRead = i;
 				top = false;
 			}
-			if (std::get<3>(extents[i])-std::get<2>(extents[i]) > maxLength)
+			if (std::get<3>(rowExtents[i])-std::get<2>(rowExtents[i]) > maxLength)
 			{
-				maxLength = std::get<3>(extents[i])-std::get<2>(extents[i]);
-				maxSNP = i;
+				maxLength = std::get<3>(rowExtents[i])-std::get<2>(rowExtents[i]);
+				maxRead = i;
 				top = true;
 			}
 		}
-		size_t maxRead = 0;
+		size_t maxSNP = 0;
 		if (top)
 		{
-			maxRead = std::get<3>(extents[maxSNP]);
+			maxSNP = std::get<3>(rowExtents[maxRead]);
 		}
 		else
 		{
-			maxRead = std::get<0>(extents[maxSNP]);
+			maxSNP = std::get<0>(rowExtents[maxRead]);
 		}
 		bool found = false;
 		for (auto& x : result)
