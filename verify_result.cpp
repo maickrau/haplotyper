@@ -1,6 +1,8 @@
 //g++ verify_result.cpp fasta_utils.cpp -std=c++11 -o verify_result.exe
 //./verify_result.exe resultsFile allReadsFile
 
+#include <chrono>
+#include <random>
 #include <iostream>
 #include <algorithm>
 #include <vector>
@@ -111,10 +113,25 @@ size_t calculateResult(std::vector<size_t> genomes, std::vector<size_t> assignme
 	return minValue;
 }
 
+template <typename Generator>
+std::vector<size_t> getRandoms(Generator& generator, size_t num, int k)
+{
+	std::uniform_int_distribution<int> choose {0, k-1};
+	std::vector<size_t> ret;
+	for (size_t i = 0; i < num; i++)
+	{
+		ret.push_back(choose(generator));
+	}
+	return ret;
+}
+
 int main(int argc, char** argv)
 {
 	std::vector<size_t> genomes = getGenomeIds(loadFastas(argv[2]));
 	std::vector<size_t> assignments = loadAssignments(argv[1]);
+	std::mt19937 generator {(size_t)std::chrono::system_clock::now().time_since_epoch().count()};
+//	std::vector<size_t> genomes = getRandoms(generator, 100000, 4);
+//	std::vector<size_t> assignments = getRandoms(generator, 100000, 4);
 	size_t result = calculateResult(genomes, assignments);
 	size_t unsolved = std::count(assignments.begin(), assignments.end(), -1);
 	double normalizedScore = 1.0-(double)result/(double)(assignments.size()-unsolved);

@@ -1,6 +1,8 @@
 //g++ remove_zero_columns.cpp variant_utils.cpp fasta_utils.cpp -std=c++11 -o remove_zero_columns.exe
 //./remove_zero_columns.exe inputSupportsFile outputSupportsFile outputRenumberingFile
 
+#include <iostream>
+
 #include "variant_utils.h"
 
 int main(int argc, char** argv)
@@ -22,6 +24,8 @@ int main(int argc, char** argv)
 		SNPused[x.SNPnum] = true;
 	}
 
+	std::cerr << readUsed.size() << " lines\n";
+
 	SupportRenumbering renumbering;
 	size_t usedReads = 0;
 	for (size_t i = 0; i < readUsed.size(); i++)
@@ -41,6 +45,8 @@ int main(int argc, char** argv)
 			usedSNPs++;
 		}
 	}
+
+	std::cerr << "cut to " << usedReads << "\n";
 
 	std::vector<SNPSupport> result = renumberSupports(supports, renumbering);
 	writeSupports(result, argv[2]);

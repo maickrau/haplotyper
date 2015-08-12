@@ -42,13 +42,14 @@ std::pair<std::vector<SNPSupport>, SupportRenumbering> mergeSubsets(std::vector<
 		{
 			renumbering.addReadRenumbering(lines[i].readNum, merged.size());
 			merged.push_back(lines[i]);
+			merged.back().readNum = merged.size()-1;
 		}
 	}
 	std::cout << "to " << merged.size() << "\n";
 	std::vector<SNPSupport> result;
-	for (auto x : merged)
+	for (size_t i = 0; i < merged.size(); i++)
 	{
-		std::vector<SNPSupport> part = x.toSupports();
+		std::vector<SNPSupport> part = merged[i].toSupports();
 		result.insert(result.end(), part.begin(), part.end());
 	}
 	for (size_t i = 0; i < maxSNP; i++)

@@ -19,9 +19,11 @@ public:
 class SupportRenumbering
 {
 public:
+	static SupportRenumbering identity(size_t maxRead, size_t maxSNP);
 	SupportRenumbering();
 	SupportRenumbering reverse();
 	SupportRenumbering merge(SupportRenumbering second);
+	void overwriteReadRenumbering(size_t oldRead, size_t newRead);
 	void addReadRenumbering(size_t oldRead, size_t newRead);
 	void addSNPRenumbering(size_t oldSNP, size_t newSNP);
 	void swapRows(size_t firstRow, size_t secondRow);
@@ -74,7 +76,7 @@ public:
 				assert(x.SNPnum >= lastSNPnum);
 				variantsAtLocations.emplace_back(x.SNPnum, x.variant);
 				supportsAtLocations.push_back(x.support);
-				lastSNPnum++;
+				lastSNPnum = x.SNPnum;
 			}
 			supportsStart++;
 		}
@@ -94,6 +96,5 @@ public:
 
 std::vector<SNPLine> makeLines(std::vector<SNPSupport> supports);
 std::vector<SNPSupport> mergeRows(std::vector<SNPSupport> oldSupports, size_t row1, size_t row2);
-
 
 #endif

@@ -12,45 +12,34 @@ std::pair<SupportRenumbering, std::vector<SNPSupport>> mergeSupports(std::vector
 {
 	SupportRenumbering renumbering;
 	size_t maxSNP = 0;
+	size_t maxRead = 0;
 	for (auto x : supports)
 	{
 		maxSNP = std::max(maxSNP, x.SNPnum);
+		maxRead = std::max(maxRead, x.readNum);
 	}
 	maxSNP++;
-	for (size_t i = 0; i < maxSNP; i++)
-	{
-		renumbering.addSNPRenumbering(i, i);
-	}
+	maxRead++;
+	renumbering = SupportRenumbering::identity(maxRead, maxSNP);
 
 	std::cout << "start\n";
 	std::sort(supports.begin(), supports.end(), [](SNPSupport left, SNPSupport right) { return left.SNPnum < right.SNPnum; });
 	std::stable_sort(supports.begin(), supports.end(), [](SNPSupport left, SNPSupport right) { return left.readNum < right.readNum; });
-	std::vector<SNPLine> rows;
-	size_t maxReadNum = 0;
-	for (auto x : supports)
-	{
-		maxReadNum = std::max(maxReadNum, x.readNum);
-	}
-	rows.resize(maxReadNum+1);
-	std::cout << "make lines\n";
-	size_t lastReadStart = 0;
-	for (size_t i = 1; i < supports.size(); i++)
-	{
-		if (supports[i].readNum != supports[i-1].readNum)
-		{
-			rows[supports[lastReadStart].readNum] = SNPLine {supports.begin()+lastReadStart, supports.begin()+i, supports[lastReadStart].readNum};
-			lastReadStart = i;
-		}
-	}
-	rows[supports[lastReadStart].readNum] = SNPLine {supports.begin()+lastReadStart, supports.end(), supports[lastReadStart].readNum};
+	std::vector<SNPLine> rows = makeLines(supports);
 	std::cout << "made lines\n";
 	size_t lastRead = 0;
 	std::vector<SNPLine> merged;
 	merged.push_back(rows[0]);
 	double currentSupport = 1;
-	renumbering.addReadRenumbering(0, 0);
+	for (int i = 0; i < rows.size(); i++)
+	{
+		for (int j = 0; j < i; j++)
+		{
+			assert(rows[i].readNum != rows[j].readNum);
+		}
+	}
 	std::cout << "merge\n";
-	for (size_t i = 1; i < rows.size(); i++)
+	for (size_t i = 0; i < rows.size(); i++)
 	{
 		bool exists = false;
 		for (size_t a = 0; a < merged.size(); a++)
@@ -59,14 +48,15 @@ std::pair<SupportRenumbering, std::vector<SNPSupport>> mergeSupports(std::vector
 			{
 				exists = true;
 				merged[a].merge(rows[i]);
-				renumbering.addReadRenumbering(i, a);
+				renumbering.overwriteReadRenumbering(rows[i].readNum, a);
 				break;
 			}
 		}
 		if (!exists)
 		{
 			merged.push_back(rows[i]);
-			renumbering.addReadRenumbering(i, merged.size()-1);
+			merged.back().readNum = merged.size()-1;
+			renumbering.overwriteReadRenumbering(rows[i].readNum, merged.size()-1);
 		}
 	}
 	std::cout << "merged from " << rows.size() << " rows to " << merged.size() << " rows\n";
@@ -86,7 +76,7 @@ int main(int argc, char** argv)
 {
 	std::vector<SNPSupport> supports = loadSupports(argv[1]);
 	auto merged = mergeSupports(supports);
-	merged.second = renumberSupports(merged.second, merged.first);
+//	merged.second = renumberSupports(merged.second, merged.first);
 	writeSupports(merged.second, argv[2]);
 	writeRenumbering(merged.first, argv[3]);
 }

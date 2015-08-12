@@ -53,6 +53,20 @@ void writeSupports(std::vector<SNPSupport> supports, std::string fileName)
 	}
 }
 
+SupportRenumbering SupportRenumbering::identity(size_t maxRead, size_t maxSNP)
+{
+	SupportRenumbering ret;
+	for (size_t i = 0; i < maxRead; i++)
+	{
+		ret.addReadRenumbering(i, i);
+	}
+	for (size_t i = 0; i < maxSNP; i++)
+	{
+		ret.addSNPRenumbering(i, i);
+	}
+	return ret;
+}
+
 SupportRenumbering::SupportRenumbering()
 {
 }
@@ -182,6 +196,12 @@ SupportRenumbering SupportRenumbering::reverse()
 		ret.addSNPRenumbering(SNPRenumbering[i], i);
 	}
 	return ret;
+}
+
+void SupportRenumbering::overwriteReadRenumbering(size_t oldRead, size_t newRead)
+{
+	assert(oldRead < readRenumbering.size());
+	readRenumbering[oldRead] = newRead;
 }
 
 void SupportRenumbering::addReadRenumbering(size_t oldRead, size_t newRead)
