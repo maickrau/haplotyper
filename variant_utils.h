@@ -90,11 +90,13 @@ public:
 	bool operator!=(const SNPLine& second) const;
 	bool contains(const SNPLine& second) const;
 	char variantAt(size_t loc) const;
+	double supportAt(size_t loc) const;
 	void mergeSubset(SNPLine second);
 	std::vector<SNPSupport> toSupports() const;
 };
 
 std::vector<SNPLine> makeLines(std::vector<SNPSupport> supports);
 std::vector<SNPSupport> mergeRows(std::vector<SNPSupport> oldSupports, size_t row1, size_t row2);
+std::vector<SNPSupport> mergeRowsForceMerge(std::vector<SNPSupport> oldSupports, size_t row1, size_t row2);
 
 #endif

@@ -412,6 +412,18 @@ void SNPLine::merge(SNPLine second)
 	}
 }
 
+double SNPLine::supportAt(size_t loc) const
+{
+	for (size_t i = 0; i < variantsAtLocations.size(); i++)
+	{
+		if (variantsAtLocations[i].first == loc)
+		{
+			return supportsAtLocations[i];
+		}
+	}
+	assert(false);
+}
+
 char SNPLine::variantAt(size_t loc) const
 {
 	for (auto x : variantsAtLocations)
@@ -467,6 +479,59 @@ std::vector<SNPSupport> mergeRows(std::vector<SNPSupport> oldSupports, size_t ro
 	for (auto x : newRow)
 	{
 		result.push_back(x.second);
+	}
+	return result;
+}
+
+//allow merging even if rows have different variants, take higher-weight variant where rows differ
+std::vector<SNPSupport> mergeRowsForceMerge(std::vector<SNPSupport> oldSupports, size_t row1, size_t row2)
+{
+	std::vector<SNPSupport> result;
+	std::unordered_map<size_t, std::vector<SNPSupport>> newRow;
+	for (auto x : oldSupports)
+	{
+		if (x.readNum != row1 && x.readNum != row2)
+		{
+			result.push_back(x);
+		}
+		else
+		{
+			if (newRow[x.SNPnum].size() == 0)
+			{
+				newRow[x.SNPnum].emplace_back(x);
+				newRow[x.SNPnum].back().readNum = row1;
+			}
+			else
+			{
+				bool found = false;
+				for (auto& y : newRow[x.SNPnum])
+				{
+					if (y.variant == x.variant)
+					{
+						y.support += x.support;
+						found = true;
+						break;
+					}
+				}
+				if (!found)
+				{
+					newRow[x.SNPnum].emplace_back(x);
+					newRow[x.SNPnum].back().readNum = row1;
+				}
+			}
+		}
+	}
+	for (auto x : newRow)
+	{
+		SNPSupport highestSupport = x.second.front();
+		for (auto y : x.second)
+		{
+			if (y.support > highestSupport.support)
+			{
+				highestSupport = y;
+			}
+		}
+		result.push_back(highestSupport);
 	}
 	return result;
 }

@@ -105,30 +105,34 @@ std::vector<SNPLine> filterLinesAny(const std::vector<SNPLine>& lines, size_t SN
 	return ret;
 }
 
-size_t lineDifference(SNPLine left, SNPLine right)
+double lineDifference(SNPLine left, SNPLine right)
 {
 	std::set<size_t> leftSNPs;
 	for (auto x : left.variantsAtLocations)
 	{
 		leftSNPs.insert(x.first);
 	}
-	size_t result = leftSNPs.size();
+	double result = 0;
+	for (size_t i = 0; i < left.supportsAtLocations.size(); i++)
+	{
+		result += left.supportsAtLocations[i];
+	}
 	for (auto x : right.variantsAtLocations)
 	{
 		if (leftSNPs.count(x.first) > 0)
 		{
 			if (left.variantAt(x.first) != x.second)
 			{
-				result += leftSNPs.size()+right.variantsAtLocations.size();
+				result += right.supportAt(x.first)*2+left.supportAt(x.first);
 			}
 			else
 			{
-				result--;
+				result -= left.supportAt(x.first);
 			}
 		}
 		else
 		{
-			result++;
+			result += right.supportAt(x.first);
 		}
 	}
 	return result;
@@ -140,14 +144,15 @@ std::pair<size_t, size_t> findMostSimilarRows(const std::vector<SNPSupport>& sup
 {
 	std::vector<SNPLine> lines = makeLines(supports);
 	lines = filter(lines, SNPposition);
-	size_t bestLeft = 0;
-	size_t bestRight = 0;
-	size_t bestDifference = -1;
+	size_t bestLeft = lines[1].readNum;
+	size_t bestRight = lines[0].readNum;
+	double bestDifference = lineDifference(lines[1], lines[0]);
 	for (size_t i = 0; i < lines.size(); i++)
 	{
 		for (size_t j = 0; j < i; j++)
 		{
-			size_t difference = lineDifference(lines[i], lines[j]);
+			double difference = lineDifference(lines[i], lines[j]);
+			assert(lineDifference(lines[j], lines[i]) == difference);
 			if (difference < bestDifference)
 			{
 				bestDifference = difference;
@@ -192,7 +197,7 @@ int main(int argc, char** argv)
 			break;
 		}
 		std::pair<size_t, size_t> similars = findMostSimilarRows(supports, SNPposition, filterLines);
-		supports = mergeRows(supports, similars.first, similars.second);
+		supports = mergeRowsForceMerge(supports, similars.first, similars.second);
 		for (size_t i = 0; i < maxRead; i++)
 		{
 			if (renumbering.getReadRenumbering(i) == similars.second)
@@ -210,7 +215,7 @@ int main(int argc, char** argv)
 			break;
 		}
 		std::pair<size_t, size_t> similars = findMostSimilarRows(supports, SNPposition, filterLinesAny);
-		supports = mergeRows(supports, similars.first, similars.second);
+		supports = mergeRowsForceMerge(supports, similars.first, similars.second);
 		for (size_t i = 0; i < maxRead; i++)
 		{
 			if (renumbering.getReadRenumbering(i) == similars.second)
