@@ -152,7 +152,7 @@ std::pair<size_t, size_t> findMostSimilarRows(const std::vector<SNPSupport>& sup
 		for (size_t j = 0; j < i; j++)
 		{
 			double difference = lineDifference(lines[i], lines[j]);
-			assert(lineDifference(lines[j], lines[i]) == difference);
+			assert(std::abs(lineDifference(lines[j], lines[i])-difference) < 0.01);
 			if (difference < bestDifference)
 			{
 				bestDifference = difference;

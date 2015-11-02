@@ -23,6 +23,7 @@ public:
 	SupportRenumbering();
 	SupportRenumbering reverse();
 	SupportRenumbering merge(SupportRenumbering second);
+	SupportRenumbering mergeWithZeros(SupportRenumbering second);
 	void overwriteReadRenumbering(size_t oldRead, size_t newRead);
 	void addReadRenumbering(size_t oldRead, size_t newRead);
 	void addSNPRenumbering(size_t oldSNP, size_t newSNP);

@@ -184,6 +184,48 @@ SupportRenumbering SupportRenumbering::merge(SupportRenumbering second)
 	return ret;
 }
 
+SupportRenumbering SupportRenumbering::mergeWithZeros(SupportRenumbering second)
+{
+	SupportRenumbering ret;
+	for (size_t i = 0; i < readRenumbering.size(); i++)
+	{
+		if (readRenumbering[i] == -1)
+		{
+			ret.addReadRenumbering(i, -1);
+		}
+		else
+		{
+			if (second.readRenumbering.size() > readRenumbering[i] && second.hasReadRenumbering(readRenumbering[i]))
+			{
+				ret.addReadRenumbering(i, second.getReadRenumbering(readRenumbering[i]));
+			}
+			else
+			{
+				ret.addReadRenumbering(i, -1);
+			}
+		}
+	}
+	for (size_t i = 0; i < SNPRenumbering.size(); i++)
+	{
+		if (SNPRenumbering[i] == -1)
+		{
+			ret.addSNPRenumbering(i, -1);
+		}
+		else
+		{
+			if (second.SNPRenumbering.size() > SNPRenumbering[i] && second.hasSNPRenumbering(SNPRenumbering[i]))
+			{
+				ret.addSNPRenumbering(i, second.getSNPRenumbering(SNPRenumbering[i]));
+			}
+			else
+			{
+				ret.addSNPRenumbering(i, -1);
+			}
+		}
+	}
+	return ret;
+}
+
 SupportRenumbering SupportRenumbering::reverse()
 {
 	SupportRenumbering ret;
@@ -232,12 +274,12 @@ void SupportRenumbering::addSNPRenumbering(size_t oldSNP, size_t newSNP)
 
 bool SupportRenumbering::hasReadRenumbering(size_t oldRead) const
 {
-	return readRenumbering[oldRead] != -1;
+	return oldRead < readRenumbering.size() && readRenumbering[oldRead] != -1;
 }
 
 bool SupportRenumbering::hasSNPRenumbering(size_t oldSNP) const
 {
-	return SNPRenumbering[oldSNP] != -1;
+	return oldSNP < SNPRenumbering.size() && SNPRenumbering[oldSNP] != -1;
 }
 
 size_t SupportRenumbering::getReadRenumbering(size_t oldRead) const

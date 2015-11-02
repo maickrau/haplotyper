@@ -59,6 +59,7 @@ Genome getConsensusFromReads(const std::vector<Genome>& reads, size_t actualSize
 	ret.bases.resize(actualSize);
 	for (size_t i = 0; i < actualSize; i++)
 	{
+		ret.bases[i] = 0;
 		size_t maxValue = 0;
 		for (auto x : consensusSupport[i])
 		{
@@ -180,11 +181,25 @@ int permutationDifference(const std::vector<int>& p1, const std::vector<int>& p2
 	return ret;
 }
 
+int normalizedPermutationDifference(const std::vector<int>& p1, const std::vector<int>& p2)
+{
+	for (size_t i = 0; i < p1.size(); i++)
+	{
+		if (p1[i] != p2[i])
+		{
+			return 1;
+		}
+	}
+	return 0;
+}
+
 int substitutions(const std::vector<std::vector<char>>& genomes, const std::vector<std::vector<char>>& consensuses, const std::vector<int>& permutation, size_t index)
 {
 	int result = 0;
 	for (size_t i = 0; i < permutation.size(); i++)
 	{
+		assert(consensuses[i][index] == 0 || consensuses[i][index] == 'A' || consensuses[i][index] == 'T' || consensuses[i][index] == 'C' || consensuses[i][index] == 'G');
+		assert(genomes[i][index] == 'A' || genomes[i][index] == 'T' || genomes[i][index] == 'C' || genomes[i][index] == 'G');
 		if (consensuses[i][index] > 0 && genomes[permutation[i]][index] != consensuses[i][index])
 		{
 			result++;
@@ -194,11 +209,9 @@ int substitutions(const std::vector<std::vector<char>>& genomes, const std::vect
 }
 
 //switch distance, substitutions
-std::tuple<int, int> getScore(std::vector<std::vector<char>> genomes, std::vector<std::vector<char>> consensuses, int maxSubstitutions, size_t k)
+template<typename F>
+std::tuple<int, int> getScore(std::vector<std::vector<int>> permutations, std::vector<std::vector<char>> genomes, std::vector<std::vector<char>> consensuses, int maxSubstitutions, size_t k, F permutationDifferenceFunction)
 {
-//	std::vector<std::vector<int>> permutations = getPermutations(k);
-	std::vector<std::vector<int>> permutations = getAllPossibleAssignments(k);
-
 	//permutation index, substitutions, score
 	std::vector<std::tuple<size_t, int, int>> score;
 	size_t length = genomes[0].size();
@@ -218,10 +231,11 @@ std::tuple<int, int> getScore(std::vector<std::vector<char>> genomes, std::vecto
 			hasScores.resize(maxSubstitutions, false);
 			for (size_t k = 0; k < score.size(); k++)
 			{
-				int newSubstitutions = std::get<1>(score[k])+substitutions(genomes, consensuses, permutations[std::get<0>(score[k])], i);
+				int newSubstitutions = std::get<1>(score[k])+substitutions(genomes, consensuses, permutations[j], i);
 				if (newSubstitutions < maxSubstitutions)
 				{
-					int newScore = std::get<2>(score[k])+permutationDifference(permutations[j], permutations[std::get<0>(score[k])]);
+					int newScore = std::get<2>(score[k])+permutationDifferenceFunction(permutations[j], permutations[std::get<0>(score[k])]);
+					assert(permutationDifferenceFunction(permutations[j], permutations[std::get<0>(score[k])]) == permutationDifferenceFunction(permutations[std::get<0>(score[k])], permutations[j]));
 					if (!hasScores[newSubstitutions] || newScore < bestScores[newSubstitutions])
 					{
 						bestScores[newSubstitutions] = newScore;
@@ -238,10 +252,39 @@ std::tuple<int, int> getScore(std::vector<std::vector<char>> genomes, std::vecto
 			}
 		}
 		score = newScores;
+		if (newScores.size() == 0)
+		{
+			//no match with a low enough error rate
+			return std::make_tuple(-1, -1);
+		}
 	}
 	auto bestScore = *std::min_element(score.begin(), score.end(), [](std::tuple<size_t, int, int> left, std::tuple<size_t, int, int> right) {return std::get<2>(left) < std::get<2>(right);});
 
 	return std::make_tuple(std::get<2>(bestScore), std::get<1>(bestScore));
+}
+
+std::tuple<int, int> getScoreBijection(std::vector<std::vector<char>> genomes, std::vector<std::vector<char>> consensuses, int maxSubstitutions, size_t k)
+{
+	std::vector<std::vector<int>> permutations = getPermutations(k);
+	return getScore(permutations, genomes, consensuses, maxSubstitutions, k, permutationDifference);
+}
+
+std::tuple<int, int> getScoreManyToMany(std::vector<std::vector<char>> genomes, std::vector<std::vector<char>> consensuses, int maxSubstitutions, size_t k)
+{
+	std::vector<std::vector<int>> permutations = getAllPossibleAssignments(k);
+	return getScore(permutations, genomes, consensuses, maxSubstitutions, k, permutationDifference);
+}
+
+std::tuple<int, int> getNormalizedScoreBijection(std::vector<std::vector<char>> genomes, std::vector<std::vector<char>> consensuses, int maxSubstitutions, size_t k)
+{
+	std::vector<std::vector<int>> permutations = getPermutations(k);
+	return getScore(permutations, genomes, consensuses, maxSubstitutions, k, normalizedPermutationDifference);
+}
+
+std::tuple<int, int> getNormalizedScoreManyToMany(std::vector<std::vector<char>> genomes, std::vector<std::vector<char>> consensuses, int maxSubstitutions, size_t k)
+{
+	std::vector<std::vector<int>> permutations = getAllPossibleAssignments(k);
+	return getScore(permutations, genomes, consensuses, maxSubstitutions, k, normalizedPermutationDifference);
 }
 
 int main(int argc, char** argv)
@@ -289,6 +332,13 @@ int main(int argc, char** argv)
 		std::cout << "\n";
 	}
 	std::cerr << "scoring\n";
-	auto score = getScore(genomeNucleotides, consensusNucleotides, maxSubstitutions, k);
+	auto score = getScoreBijection(genomeNucleotides, consensusNucleotides, maxSubstitutions, k);
+	auto score2 = getScoreManyToMany(genomeNucleotides, consensusNucleotides, maxSubstitutions, k);
+	auto score3 = getNormalizedScoreBijection(genomeNucleotides, consensusNucleotides, maxSubstitutions, k);
+	auto score4 = getNormalizedScoreManyToMany(genomeNucleotides, consensusNucleotides, maxSubstitutions, k);
 	std::cout << std::get<0>(score) << " " << std::get<1>(score) << "\n";
+	std::cout << std::get<0>(score2) << " " << std::get<1>(score2) << "\n";
+	std::cout << std::get<0>(score3) << " " << std::get<1>(score3) << "\n";
+	std::cout << std::get<0>(score4) << " " << std::get<1>(score4) << "\n";
+	std::cout << genomeNucleotides[0].size() << "\n";
 }

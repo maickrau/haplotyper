@@ -38,14 +38,14 @@ int main(int argc, char** argv)
 	for (int i = 3; i < argc; i++)
 	{
 		SupportRenumbering add = loadRenumbering(argv[i]);
-		previousRenumberings = previousRenumberings.merge(add);
+		previousRenumberings = previousRenumberings.mergeWithZeros(add);
 	}
 	std::vector<std::set<int>> renumberingsBeforeMerge;
 	renumberingsBeforeMerge.resize(previousRenumberings.readSize());
 	size_t totalAfterMerges = 0;
 	for (size_t i = 0; i < genomeIds.size(); i++)
 	{
-		if (previousRenumberings.hasReadRenumbering(i))
+		if (previousRenumberings.hasReadRenumbering(i) && mergeRenumbering.hasReadRenumbering(previousRenumberings.getReadRenumbering(i)))
 		{
 			totalAfterMerges++;
 			size_t targetRead = previousRenumberings.getReadRenumbering(i);
@@ -58,7 +58,10 @@ int main(int argc, char** argv)
 	countAfterMerging.resize(mergeRenumbering.readSize(), 0);
 	for (size_t i = 0; i < mergeRenumbering.readSize(); i++)
 	{
-		countAfterMerging[mergeRenumbering.getReadRenumbering(i)]++;
+		if (mergeRenumbering.hasReadRenumbering(i))
+		{
+			countAfterMerging[mergeRenumbering.getReadRenumbering(i)]++;
+		}
 	}
 	size_t wrongBefore = 0;
 	for (size_t i = 0; i < genomeIds.size(); i++)
@@ -66,14 +69,17 @@ int main(int argc, char** argv)
 		if (previousRenumberings.hasReadRenumbering(i))
 		{
 			size_t previousTargetRead = previousRenumberings.getReadRenumbering(i);
-			if (renumberingsBeforeMerge[previousTargetRead].size() == 1)
+			if (mergeRenumbering.hasReadRenumbering(previousTargetRead))
 			{
-				size_t targetRead = mergeRenumbering.getReadRenumbering(previousTargetRead);
-				renumberings[targetRead].insert(genomeIds[i]);
-			}
-			else
-			{
-				wrongBefore++;
+				if (renumberingsBeforeMerge[previousTargetRead].size() == 1)
+				{
+					size_t targetRead = mergeRenumbering.getReadRenumbering(previousTargetRead);
+					renumberings[targetRead].insert(genomeIds[i]);
+				}
+				else
+				{
+					wrongBefore++;
+				}
 			}
 		}
 	}
@@ -81,7 +87,7 @@ int main(int argc, char** argv)
 	size_t wrong = 0;
 	for (size_t i = 0; i < renumberings.size(); i++)
 	{
-		if (countAfterMerging[i] > 1)
+		if (countAfterMerging[i] >= 1)
 		{
 			total++;
 		}
