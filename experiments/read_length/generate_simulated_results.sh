@@ -1,4 +1,5 @@
 #!/bin/sh
+#note: run generate_all_testdatas.sh before running this
 
 runTest(){
 	./remove_zero_columns.exe $1/snpsupport_simulated.txt $1/snpsupport_simulated_startunzero.txt $1/renumbering_simulated_startunzero.txt
@@ -11,6 +12,9 @@ runTest(){
 	./verify_result.exe $1/result_simulated_fixed.txt $1/reads_all_repositioned.fasta > $1/result_simulated_score.txt
 	./switch_distance_scorer.exe $1/result_simulated_fixed.txt $1/reads_all_repositioned.fasta B_C_D_E.fasta 10 4 > $1/result_simulated_switch.txt
 	./evaluate_merge_success.exe $1/reads_all_repositioned.fasta $1/renumbering_simulated_remerging.txt $1/renumbering_simulated_startunzero.txt $1/renumbering_simulated_collapse.txt $1/renumbering_simulated_merging.txt > $1/merge_success_simulated.txt
+
+	./prettify_sort.exe $1/snpsupport_simulated_unzero.txt $1/snpsupport_simulated_print.txt $1/renumbering_simulated_prettysort.txt
+	./visualize_snpsupport.exe $1/snpsupport_simulated_print.txt $1/visualize_snpsupport_simulated_final.txt
 }
 
 runTest 100

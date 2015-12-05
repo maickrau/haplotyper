@@ -1,4 +1,17 @@
 #!/bin/sh
+#HOW TO RUN THIS EXPERIMENT:
+#- create a directory for this experiment
+#- compile everything in the source directory and copy them to the experiment directory
+#- copy the scripts to the experiment directory
+#- acquire 4 genomes, name the files B.fasta, C.fasta, D.fasta, E.fasta, and name the genomes B, C, D, E respectively
+#- also put the genomes to a file B_C_D_E.fasta
+#- get DiscoSNP and make sure that the path in generate_snpsupports.sh refers to it
+#-   NOTE: the path in generate_snpsupports.sh is relative to the subdirectory for that read length, not the experiment directory!
+#- run ./generate_all_testdatas.sh
+#- run ./generate_simulated_results.sh
+#- run ./parse_results.sh
+#- the results will be in the generated results_*.csv files
+
 
 ./generate_snpsupports.sh 100 2000
 ./generate_snpsupports.sh 200 1000
