@@ -3,7 +3,7 @@
 
 //http://eigen.tuxfamily.org/index.php?title=Main_Page
 #include <Eigen/Dense>
-#include <Eigen/EigenValues>
+#include <Eigen/Eigenvalues>
 
 #include <iostream>
 

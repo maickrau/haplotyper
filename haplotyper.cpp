@@ -15,11 +15,12 @@ class AssignOnce
 {
 public:
 	AssignOnce() : assigned(false) {};
-	operator=(const T& v)
+	AssignOnce& operator=(const T& v)
 	{
 		assert(!assigned);
 		value = v;
 		assigned = true;
+		return *this;
 	}
 	operator T()
 	{
